@@ -1,0 +1,23 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Generator",
+            "program": "${workspaceFolder}/generator",
+            "args": [
+                "--puts", "100",
+                "--gets", "50",
+                "--ranges", "0",
+                "--deletes", "0",
+                "--gets-misses-ratio", "0.5",
+                "--gets-skewness", "0.2"
+            ],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
