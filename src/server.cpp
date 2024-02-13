@@ -4,8 +4,11 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <tuple>
+#include <chrono>
 
-#include "lsm.h"
+#include "lsm.hpp"
+#include "db_manager.hpp"
 
 int main() {
 
@@ -47,12 +50,16 @@ int main() {
         std::string userCommand(buf, buf + bytesReceived);
         
         // Log the message.
-        std::cout << "Input: " << userCommand << std::endl;
+        // std::cout << "Client command: " << userCommand << std::endl;
 
         // Process the message and send a reply to the client.
+        std::string replyMessage;
+        Status status;
+        std::tie(status, replyMessage) = processCommand(userCommand);
+
         Message* message = new Message();
-        message->status = SUCCESS;
-        strncpy(message->message, userCommand.c_str(), sizeof(message->message) - 1);
+        message->status = status;
+        strncpy(message->message, replyMessage.c_str(), sizeof(message->message) - 1);
         message->message[sizeof(message->message) - 1] = '\0';
         message->messageLength = strlen(message->message);
 

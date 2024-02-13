@@ -17,4 +17,6 @@ struct Message {
     char message[512];
 };
 
+extern std::unordered_map<int, int> map;
+
 #endif

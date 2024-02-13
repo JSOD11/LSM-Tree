@@ -5,7 +5,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-#include "lsm.h"
+#include "lsm.hpp"
 
 int main() {
 
@@ -28,6 +28,7 @@ int main() {
 
     std::string userInput;
     std::cout << "> ";
+    auto start = std::chrono::high_resolution_clock::now();
     while (std::getline(std::cin, userInput)) {
         if (!userInput.empty()) {
 
@@ -42,8 +43,16 @@ int main() {
             Message* replyMessage = new Message();
             recv(sock, replyMessage, sizeof(Message), 0);
 
+            // Notify the client if the server returns an error.
+            if (replyMessage->status != SUCCESS) {
+                std::cout << "The server returned an error." << std::endl;
+            }
+
             // Output the server's response.
-            std::cout << replyMessage->message << std::endl;
+            std::string payload(replyMessage->message);
+            if (payload != "") {
+                std::cout << replyMessage->message << std::endl;
+            }
             
             delete replyMessage;
 
@@ -54,6 +63,11 @@ int main() {
             std::cout << "> ";
         }
     }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    std::cout << "Connection duration: " << duration << " milliseconds." << std::endl;
 
     close(sock);
 

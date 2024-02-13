@@ -1,15 +1,18 @@
-CC=g++
+CC=g++ -std=c++11
 CFLAGS=-Wall -Wextra -g
 
 # Targets
 all: server client
 
 # Server
-server: server.o
-	$(CC) $(CFLAGS) -o server server.o
+server: server.o db_manager.o
+	$(CC) $(CFLAGS) -o server server.o db_manager.o
 
 server.o: server.cpp
 	$(CC) $(CFLAGS) -c server.cpp
+
+db_manager.o: db_manager.cpp
+	$(CC) $(CFLAGS) -c db_manager.cpp
 
 # Client
 client: client.o
