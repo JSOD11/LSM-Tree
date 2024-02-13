@@ -23,6 +23,7 @@ int main() {
     inet_pton(AF_INET, ipAddress.c_str(), &hint.sin_addr);
     int connectRes = connect(sock, (sockaddr*)&hint, sizeof(hint));
     if (connectRes == -1) {
+        std::cout << "Could not connect to server." << std::endl;
         return 1;
     }
 

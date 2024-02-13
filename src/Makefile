@@ -1,4 +1,4 @@
-CC=g++ -std=c++11
+CC=g++ -std=c++17
 CFLAGS=-Wall -Wextra -g
 
 # Targets

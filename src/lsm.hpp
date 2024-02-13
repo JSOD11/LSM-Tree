@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <string>
+#include <map>
 
 const int PORT = 6789;
 
@@ -17,6 +18,16 @@ struct Message {
     char message[512];
 };
 
-extern std::unordered_map<int, int> map;
+struct Catalog {
+    // The buffer size is the number of KV pairs in l0.
+    size_t bufferSize;
+    size_t numLevels;
+    size_t sizeRatio;
+    int* levels[10];
+    size_t pairsInLevel[10];
+};
+
+// extern std::map<int, int> map;
+extern Catalog catalog;
 
 #endif
