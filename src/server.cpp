@@ -5,57 +5,62 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
+#include "lsm.h"
+
 int main() {
 
-    std::cout << "Starting up server...\n" << std::endl;
+    std::cout << "\nStarting up server...\n" << std::endl;
 
-    // Create a socket
     int listening = socket(AF_INET, SOCK_STREAM, 0);
-
-    // Bind the socket to an IP / port
     sockaddr_in hint;
     hint.sin_family = AF_INET;
-    hint.sin_port = htons(6789); // Host TO Network Short
-    hint.sin_addr.s_addr = INADDR_ANY; // Could also use inet_pton ...
+    hint.sin_port = htons(PORT);
+    hint.sin_addr.s_addr = INADDR_ANY;
     bind(listening, (sockaddr*)&hint, sizeof(hint));
-
-    // Mark the socket for listening in
     listen(listening, SOMAXCONN);
-
-    // Accept a call
     sockaddr_in client;
     socklen_t clientSize = sizeof(client);
-
     int clientSocket = accept(listening, (sockaddr*)&client, &clientSize);
-    std::cout << "Connected to client. Server is listening...\n" << std::endl;
-
-    // Close the listening socket
     close(listening);
+
+    std::cout << "Connected to client. Server is listening...\n" << std::endl;
 
     uint32_t length = 0;
     char buf[4096];
     while (true) {
-        // Clear the buffer
+        // Clear the buffer.
         memset(buf, 0, 4096);
 
-        // Wait for a message
+        // The first message describes the length of the client command.
         int sizeBytesReceived = recv(clientSocket, &length, sizeof(length), 0);
 
         if (sizeBytesReceived == 0) {
-            std::cout << "The client disconnected." << std::endl;
+            std::cout << "\nThe client disconnected.\n" << std::endl;
             break;
         }
 
         length = ntohl(length);
 
+        // This message contains the client's actual command.
         int bytesReceived = recv(clientSocket, buf, length, 0);
+
+        std::string userCommand(buf, buf + bytesReceived);
         
-        
-        // Display message
-        std::cout << "Received: " << std::string(buf, 0, bytesReceived) << std::endl;
+        // Log the message.
+        std::cout << "Input: " << userCommand << std::endl;
+
+        // Process the message and send a reply to the client.
+        Message* message = new Message();
+        message->status = SUCCESS;
+        strncpy(message->message, userCommand.c_str(), sizeof(message->message) - 1);
+        message->message[sizeof(message->message) - 1] = '\0';
+        message->messageLength = strlen(message->message);
+
+        send(clientSocket, message, sizeof(Message), 0);
+
+        delete message;
     }
 
-    // Close the socket
     close(clientSocket);
 
     return 0;
