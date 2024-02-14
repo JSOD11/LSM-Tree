@@ -57,7 +57,7 @@ int main() {
             
             delete replyMessage;
 
-            if (userInput == "s" || userInput == "shutdown") {
+            if (userInput == "s" || userInput == "shutdown" || userInput == "sw") {
                 std::cout << "\nShutting down client.\n" << std::endl;
                 break;
             }
@@ -66,9 +66,9 @@ int main() {
     }
 
     auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    auto duration = std::chrono::duration_cast<std::chrono::duration<double>>(end - start).count();
 
-    std::cout << "Connection duration: " << duration << " milliseconds." << std::endl;
+    std::cout << "Connection duration: " << duration << " s." << std::endl;
 
     close(sock);
 

@@ -9,11 +9,17 @@
 
 // std::map<int, int> map;
 Catalog catalog = {
-    .bufferSize = 10,
+    .bufferSize = sysconf(_SC_PAGESIZE) / (2 * sizeof(int)),
     .numLevels = 0,
     .sizeRatio = 3,
     .levels = {nullptr},
     .pairsInLevel = {0},
+};
+
+Stats stats = {
+    .puts = 0,
+    .successfulGets = 0,
+    .failedGets = 0,
 };
 
 std::vector<std::string> parseCommand(std::string userCommand) {
@@ -85,7 +91,7 @@ void propogateLevel(size_t l) {
         // We need to create the next level, then copy everything into it.
         std::string dataFileName = "data/l" + std::to_string(l + 1) + ".data";
         int fd = open(dataFileName.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-        size_t fileSize = 2 * catalog.bufferSize * std::pow(catalog.sizeRatio, l) * sizeof(int);
+        size_t fileSize = 2 * catalog.bufferSize * std::pow(catalog.sizeRatio, l + 1) * sizeof(int);
         ftruncate(fd, fileSize);
         void* levelPointer = mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         catalog.levels[l + 1] = reinterpret_cast<int*>(levelPointer);
@@ -150,6 +156,8 @@ int searchLevel(size_t level, int key) {
 // Put a key and value into the LSM tree. If the key already exists, update the value.
 std::tuple<Status, std::string> put(Status status, int key, int val) {
 
+    stats.puts++;
+
     // Search through each level of the LSM tree. If the key already exists, update it.
     for (size_t l = 0; l < catalog.numLevels; l++) {
         int i = searchLevel(l, key);
@@ -163,7 +171,9 @@ std::tuple<Status, std::string> put(Status status, int key, int val) {
     catalog.levels[0][2 * catalog.pairsInLevel[0] + 1] = val;
     catalog.pairsInLevel[0]++;
 
-    if (catalog.pairsInLevel[0] == catalog.bufferSize) propogateLevel(0);
+    if (catalog.pairsInLevel[0] == catalog.bufferSize) {
+        propogateLevel(0);
+    }
 
     return std::make_tuple(status, "");
 }
@@ -177,21 +187,29 @@ std::tuple<Status, std::string> get(Status status, int key) {
         int i = searchLevel(l, key);
         if (i >= 0) {
             std::cout << "Level " << l << ": " << key << " maps to " << catalog.levels[l][2 * i + 1] << std::endl;
+            stats.successfulGets++;
             return std::make_tuple(status, std::to_string(catalog.levels[l][2 * i + 1]));
         }
     }
 
     std::cout << key << " is not a member of the LSM tree." << std::endl;
+    stats.failedGets++;
     return std::make_tuple(status, "");
 }
 
-void printLevels(void) {
-    std::cout << "\nPrinting levels.\n" << std::endl;
+void printLevels(std::string userCommand) {
+    std::cout << "\nPrinting levels." << std::endl;
     for (size_t i = 0; i < catalog.numLevels; i++) {
         int* level = catalog.levels[i];
-        std::cout << "Level " << i << std::endl;
-        for (size_t j = 0; j < catalog.pairsInLevel[i]; j++) {
-            std::cout << level[2 * j] << " -> " << level[2 * j + 1] << std::endl;
+        if (i == 0) std::cout << "\nBuffer " << " (" << catalog.bufferSize << " entries = " << 2 * catalog.bufferSize * sizeof(int) << " bytes). Unsorted." << std::endl;
+        else std::cout << "\nLevel " << i << " (" << catalog.bufferSize * std::pow(catalog.sizeRatio, i) << " entries = " << 2 * catalog.bufferSize * std::pow(catalog.sizeRatio, i) * sizeof(int) << " bytes). Sorted." << std::endl;
+
+        if (userCommand == "p") {
+            std::cout << catalog.pairsInLevel[i] << " KV pairs. " << 2 * catalog.pairsInLevel[i] * sizeof(int) << " bytes." << std::endl;
+        } else {
+            for (size_t j = 0; j < catalog.pairsInLevel[i]; j++) {
+                std::cout << level[2 * j] << " -> " << level[2 * j + 1] << std::endl;
+            }
         }
     }
 }
@@ -200,10 +218,13 @@ std::tuple<Status, std::string> processCommand(std::string userCommand) {
 
     Status status = SUCCESS;
 
-    if (userCommand == "s" || userCommand == "shutdown") return std::make_tuple(status, "Server processed shutdown command.");
+    if (userCommand == "s" || userCommand == "shutdown" || userCommand == "sw") {
+        if (userCommand == "sw") return std::make_tuple(status, "Server processed shutdown command. Wiping all data.");
+        return std::make_tuple(status, "Server processed shutdown command. Persisting data.");
+    }
 
-    if (userCommand == "p") {
-        printLevels();
+    if (userCommand == "p" || userCommand == "pv") {
+        printLevels(userCommand);
         return std::make_tuple(status, "Printed levels to server.");
     }
 

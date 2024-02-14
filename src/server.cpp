@@ -51,17 +51,32 @@ void populateCatalog(void) {
     }
 }
 
-void shutdownServer(void) {
-    // Write the number of pairs per level into the catalog file.
-    std::ofstream catalogFile("data/catalog.data", std::ios::out);
-    for (size_t i = 0; i < catalog.numLevels; i++) {
-        catalogFile << catalog.pairsInLevel[i] << std::endl;
+void shutdownServer(std::string userCommand) {
+
+    if (userCommand == "sw") {
+        std::filesystem::remove_all("data");
+        std::cout << "Wiped data folder." << std::endl;
+    } else {
+        // Write the number of pairs per level into the catalog file.
+        std::ofstream catalogFile("data/catalog.data", std::ios::out);
+        for (size_t i = 0; i < catalog.numLevels; i++) {
+            catalogFile << catalog.pairsInLevel[i] << std::endl;
+        }
+        catalogFile.close();
+        std::cout << "Persisted data folder." << std::endl;
     }
-    catalogFile.close();
 
     for (size_t i = 0; i < catalog.numLevels; i++) {
         munmap(catalog.levels[i], 2 * catalog.pairsInLevel[i] * sizeof(int));
     }
+}
+
+void printStats(void) {
+    std::cout << "\n ——— Session stats ——— \n" << std::endl;
+    std::cout << "Puts: " << stats.puts << std::endl;
+    std::cout << "Successful gets: " << stats.successfulGets << std::endl;
+    std::cout << "Failed gets: " << stats.failedGets << std::endl;
+    std::cout << "\n ————————————————————— \n" << std::endl;
 }
 
 int main() {
@@ -86,6 +101,7 @@ int main() {
 
     uint32_t length = 0;
     char buf[4096];
+    std::string userCommand;
     while (true) {
         // Clear the buffer.
         memset(buf, 0, 4096);
@@ -103,7 +119,7 @@ int main() {
         // This message contains the client's actual command.
         int bytesReceived = recv(clientSocket, buf, length, 0);
 
-        std::string userCommand(buf, buf + bytesReceived);
+        userCommand = std::string(buf, buf + bytesReceived);
         
         // Log the message.
         // std::cout << "Client command: " << userCommand << std::endl;
@@ -124,7 +140,9 @@ int main() {
         delete message;
     }
 
-    shutdownServer();
+    shutdownServer(userCommand);
+
+    printStats();
 
     close(clientSocket);
 

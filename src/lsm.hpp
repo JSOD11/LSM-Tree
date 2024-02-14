@@ -27,7 +27,14 @@ struct Catalog {
     size_t pairsInLevel[10];
 };
 
+struct Stats {
+    size_t puts;
+    size_t successfulGets;
+    size_t failedGets;
+};
+
 // extern std::map<int, int> map;
 extern Catalog catalog;
+extern Stats stats;
 
 #endif
