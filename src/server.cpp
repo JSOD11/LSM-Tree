@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <fstream>
+#include <cmath>
 
 #include "lsm.hpp"
 #include "db_manager.hpp"
@@ -17,14 +19,49 @@ void populateCatalog(void) {
     // Create the data folder if it does not exist.
     if (!std::filesystem::exists("data")) std::filesystem::create_directory("data");
 
-    // For now, we always begin with only l0 (the buffer). We will implement persistence later.
-    int fd = open("data/l0.data", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-    size_t fileSize = 2 * catalog.bufferSize * sizeof(int);
-    ftruncate(fd, fileSize);
-    void* levelPointer = mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    catalog.levels[0] = reinterpret_cast<int*>(levelPointer);
+    if (!std::filesystem::exists("data/catalog.data")) {
+        // The database is being started from scratch. We start just with l0.
+        int fd = open("data/l0.data", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+        size_t fileSize = 2 * catalog.bufferSize * sizeof(int);
+        ftruncate(fd, fileSize);
+        void* levelPointer = mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        catalog.levels[0] = reinterpret_cast<int*>(levelPointer);
 
-    catalog.numLevels++;
+        catalog.numLevels++;
+    } else {
+        // We are populating the catalog with persisted data.
+        std::ifstream catalogFile("data/catalog.data");
+        size_t numPairs = 0, i = 0;
+        while (catalogFile >> numPairs) {
+            std::string dataFileName = "data/l" + std::to_string(i) + ".data";
+            int fd = open(dataFileName.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+            size_t fileSize = 2 * catalog.bufferSize * sizeof(int);
+            if (i > 0) {
+                fileSize *= std::pow(catalog.sizeRatio, i);
+            }
+            ftruncate(fd, fileSize);
+            void* levelPointer = mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+            catalog.levels[i] = reinterpret_cast<int*>(levelPointer);
+
+            catalog.pairsInLevel[i] = numPairs;
+
+            catalog.numLevels++;
+            i++;
+        }
+    }
+}
+
+void shutdownServer(void) {
+    // Write the number of pairs per level into the catalog file.
+    std::ofstream catalogFile("data/catalog.data", std::ios::out);
+    for (size_t i = 0; i < catalog.numLevels; i++) {
+        catalogFile << catalog.pairsInLevel[i] << std::endl;
+    }
+    catalogFile.close();
+
+    for (size_t i = 0; i < catalog.numLevels; i++) {
+        munmap(catalog.levels[i], 2 * catalog.pairsInLevel[i] * sizeof(int));
+    }
 }
 
 int main() {
@@ -86,6 +123,8 @@ int main() {
 
         delete message;
     }
+
+    shutdownServer();
 
     close(clientSocket);
 

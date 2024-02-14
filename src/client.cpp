@@ -57,7 +57,7 @@ int main() {
             
             delete replyMessage;
 
-            if (userInput == "shutdown") {
+            if (userInput == "s" || userInput == "shutdown") {
                 std::cout << "\nShutting down client.\n" << std::endl;
                 break;
             }
