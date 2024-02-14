@@ -4,16 +4,19 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <cmath>
 
 #include "lsm.hpp"
 
 // std::map<int, int> map;
 Catalog catalog = {
     .bufferSize = sysconf(_SC_PAGESIZE) / (2 * sizeof(int)),
+    // .bufferSize = 3,
     .numLevels = 0,
-    .sizeRatio = 3,
+    .sizeRatio = 4,
     .levels = {nullptr},
     .pairsInLevel = {0},
+    .fence = {nullptr},
 };
 
 Stats stats = {
@@ -61,6 +64,29 @@ bool isInt(const std::string& str) {
 //     }
 // }
 
+// `constructFence()`
+// Constructs the fence pointer array at level l within the catalog.
+void constructFence(size_t l) {
+    if (l == 0) return;
+
+    if (catalog.fence[l] != nullptr) {
+        delete[] catalog.fence[l];
+    }
+
+    catalog.fenceLength[l] = std::ceil(static_cast<double>(catalog.pairsInLevel[l] / catalog.bufferSize));
+
+    catalog.fence[l] = new int[catalog.fenceLength[l]];
+    for (size_t i = 0, j = 0; i < catalog.fenceLength[l]; i++, j += catalog.bufferSize) {
+        if (j >= 2 * catalog.pairsInLevel[l]) {
+            std::cout << "constructFence(): Out of bounds access error." << std::endl;
+            return;
+        }
+        catalog.fence[l][i] = catalog.levels[l][2 * j];
+    }
+
+    // TODO: Free fence pointers in shutdownServer().
+}
+
 // `sortLevel()`
 // Sorts the level indicated.
 void sortLevel(size_t l) {
@@ -82,6 +108,8 @@ void sortLevel(size_t l) {
         catalog.levels[l][2 * i] = levelVector[i].first;
         catalog.levels[l][2 * i + 1] = levelVector[i].second;
     }
+
+    constructFence(l);
 }
 
 // `propogateLevel()`
@@ -119,6 +147,33 @@ void propogateLevel(size_t l) {
 
         if (catalog.pairsInLevel[l + 1] == sizeL * catalog.sizeRatio) propogateLevel(l + 1);
     }
+
+    if (l > 0 && catalog.fence[l] != nullptr) {
+        delete[] catalog.fence[l];
+        catalog.fence[l] = nullptr;
+        catalog.fenceLength[l] = 0;
+    }
+}
+
+int searchFence(size_t level, int key) {
+    // Binary search through the fence pointers to get the target page.
+    int l = 0, r = catalog.fenceLength[level] - 1;
+    while (l <= r) {
+
+        // The target page is the final page.
+        if (l == (int)catalog.fenceLength[level] - 1) break;
+
+        int m = (l + r) / 2;
+        if (catalog.fence[level][m] <= key && key < catalog.fence[level][m + 1]) {
+            return m;
+        } else if (catalog.fence[level][m] < key) {
+            l = m + 1;
+        } else {
+            r = m - 1;
+        }
+    }
+
+    return r;
 }
 
 // `searchLevel()`
@@ -134,9 +189,18 @@ int searchLevel(size_t level, int key) {
                 return i;
             }
         }
-    } else {
+    } else if (catalog.fence[level] != nullptr) {
+
+        // If catalog.fence[level] exists, the level is non-empty.
+        int pageIndex = searchFence(level, key);
+        if (pageIndex == -1) return -1;
+
         // All layers beneath l0 are sorted by key.
-        int l = 0, r = catalog.pairsInLevel[level] - 1;
+
+        int l = pageIndex * catalog.bufferSize;
+        int r = std::min((pageIndex + 1) * catalog.bufferSize, catalog.pairsInLevel[level] - 1);
+
+        //int l = 0, r = catalog.pairsInLevel[level] - 1;
         while (l <= r) {
             int m = (l + r) / 2;
             if (catalog.levels[level][2 * m] == key) {
@@ -198,17 +262,25 @@ std::tuple<Status, std::string> get(Status status, int key) {
 }
 
 void printLevels(std::string userCommand) {
-    std::cout << "\nPrinting levels." << std::endl;
-    for (size_t i = 0; i < catalog.numLevels; i++) {
-        int* level = catalog.levels[i];
-        if (i == 0) std::cout << "\nBuffer " << " (" << catalog.bufferSize << " entries = " << 2 * catalog.bufferSize * sizeof(int) << " bytes). Unsorted." << std::endl;
-        else std::cout << "\nLevel " << i << " (" << catalog.bufferSize * std::pow(catalog.sizeRatio, i) << " entries = " << 2 * catalog.bufferSize * std::pow(catalog.sizeRatio, i) * sizeof(int) << " bytes). Sorted." << std::endl;
+    std::cout << "\n ——————— Printing levels. ——————— " << std::endl;
+    for (size_t l = 0; l < catalog.numLevels; l++) {
+        int* level = catalog.levels[l];
+        if (l == 0) std::cout << "\nBuffer " << " (Capacity of " << catalog.bufferSize << " pairs = " << 2 * catalog.bufferSize * sizeof(int) << " bytes). Unsorted." << std::endl;
+        else std::cout << "\nLevel " << l << " (Capacity of " << catalog.bufferSize * std::pow(catalog.sizeRatio, l) << " pairs = " << 2 * catalog.bufferSize * std::pow(catalog.sizeRatio, l) * sizeof(int) << " bytes). Sorted." << std::endl;
 
         if (userCommand == "p") {
-            std::cout << catalog.pairsInLevel[i] << " KV pairs. " << 2 * catalog.pairsInLevel[i] * sizeof(int) << " bytes." << std::endl;
+            std::cout << catalog.pairsInLevel[l] << " KV pairs. " << 2 * catalog.pairsInLevel[l] * sizeof(int) << " bytes." << std::endl;
         } else {
-            for (size_t j = 0; j < catalog.pairsInLevel[i]; j++) {
-                std::cout << level[2 * j] << " -> " << level[2 * j + 1] << std::endl;
+            // Verbose printing.
+            if (catalog.fence[l] != nullptr) {
+                std::cout << "Fence: [";
+                for (int i = 0; i < (int)catalog.fenceLength[l] - 1; i++) {
+                    std::cout << catalog.fence[l][i] << ", ";
+                }
+                std::cout << catalog.fence[l][catalog.fenceLength[l] - 1] << "]" << std::endl;
+            }
+            for (size_t i = 0; i < catalog.pairsInLevel[l]; i++) {
+                std::cout << level[2 * i] << " -> " << level[2 * i + 1] << std::endl;
             }
         }
     }

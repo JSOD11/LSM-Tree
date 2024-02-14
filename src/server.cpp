@@ -31,22 +31,22 @@ void populateCatalog(void) {
     } else {
         // We are populating the catalog with persisted data.
         std::ifstream catalogFile("data/catalog.data");
-        size_t numPairs = 0, i = 0;
+        size_t numPairs = 0, l = 0;
         while (catalogFile >> numPairs) {
-            std::string dataFileName = "data/l" + std::to_string(i) + ".data";
+            std::string dataFileName = "data/l" + std::to_string(l) + ".data";
             int fd = open(dataFileName.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
             size_t fileSize = 2 * catalog.bufferSize * sizeof(int);
-            if (i > 0) {
-                fileSize *= std::pow(catalog.sizeRatio, i);
+            if (l > 0) {
+                fileSize *= std::pow(catalog.sizeRatio, l);
             }
             ftruncate(fd, fileSize);
             void* levelPointer = mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-            catalog.levels[i] = reinterpret_cast<int*>(levelPointer);
-
-            catalog.pairsInLevel[i] = numPairs;
+            catalog.levels[l] = reinterpret_cast<int*>(levelPointer);
+            catalog.pairsInLevel[l] = numPairs;
+            constructFence(l);
 
             catalog.numLevels++;
-            i++;
+            l++;
         }
     }
 }

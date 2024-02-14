@@ -6,6 +6,7 @@
 
 #include "lsm.hpp"
 
+void constructFence(size_t l);
 std::tuple<Status, std::string> processCommand(std::string);
 
 #endif

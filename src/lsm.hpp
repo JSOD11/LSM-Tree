@@ -19,12 +19,16 @@ struct Message {
 };
 
 struct Catalog {
-    // The buffer size is the number of KV pairs in l0.
+    // The buffer size is the number of KV pairs in l0 (usually set to fill one page).
     size_t bufferSize;
     size_t numLevels;
     size_t sizeRatio;
+    // TODO: Change these to be std::vectors. Value *inside* the vector is int* or size_t.
     int* levels[10];
     size_t pairsInLevel[10];
+    // fence[l][i] stores the minimum value in levels[i * bufferSize] at level l.
+    int* fence[10];
+    size_t fenceLength[10];
 };
 
 struct Stats {
