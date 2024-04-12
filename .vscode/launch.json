@@ -7,6 +7,20 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Server",
+            "program": "${workspaceFolder}/src/server",
+            "args": [],
+            "cwd": "${workspaceFolder}/src"
+        }, {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Client",
+            "program": "${workspaceFolder}/src/client",
+            "args": [],
+            "cwd": "${workspaceFolder}/src"
+        }, {
+            "type": "lldb",
+            "request": "launch",
             "name": "Generator",
             "program": "${workspaceFolder}/generator",
             "args": [

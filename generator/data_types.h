@@ -20,20 +20,20 @@ typedef int32_t VAL_t;
 // #define KEY_MAX 2147483647
 // #define KEY_MIN -2147483647
 
-#define KEY_MAX 0
-#define KEY_MIN 1000
+#define KEY_MAX 1000000
+#define KEY_MIN -1000000
 
 // #define GEN_RANDOM_KEY_GAUSS(r) gsl_ran_gaussian(r, 2147483647/3);
 // #define GEN_RANDOM_VAL_GAUSS(r) gsl_ran_gaussian(r, 2147483647/3);
 
-#define GEN_RANDOM_KEY_GAUSS(r) gsl_ran_gaussian(r, 0);
-#define GEN_RANDOM_VAL_GAUSS(r) gsl_ran_gaussian(r, 1000/3);
+#define GEN_RANDOM_KEY_GAUSS(r) gsl_ran_gaussian(r, 1000000/3);
+#define GEN_RANDOM_VAL_GAUSS(r) gsl_ran_gaussian(r, 1000000/3);
 
 // #define GEN_RANDOM_KEY_UNIFORM(r) gsl_rng_get(r);
 // #define GEN_RANDOM_VAL_UNIFORM(r) gsl_rng_get(r);
 
-#define GEN_RANDOM_KEY_UNIFORM(r) gsl_rng_uniform(r) * 1000;
-#define GEN_RANDOM_VAL_UNIFORM(r) gsl_rng_uniform(r) * 1000;
+#define GEN_RANDOM_KEY_UNIFORM(r) gsl_rng_uniform(r) * 1000000;
+#define GEN_RANDOM_VAL_UNIFORM(r) gsl_rng_uniform(r) * 1000000;
 
 // PRINT PATTERNS
 #define PUT_PATTERN "p %d %d\n"

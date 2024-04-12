@@ -1,2 +1,6 @@
 generator/generator.dSYM*
 dsl/*.dsl
+src/client
+src/server
+src/*.o
+src/data/*
