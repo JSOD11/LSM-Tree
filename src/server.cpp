@@ -82,6 +82,8 @@ void printStats(void) {
 int main() {
 
     std::cout << "\nStarting up server...\n" << std::endl;
+    std::cout << "Buffer size: " << BUFFER_SIZE << std::endl;
+    std::cout << "Size ratio: " << SIZE_RATIO << "\n" << std::endl;
 
     populateCatalog();
 

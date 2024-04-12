@@ -8,15 +8,15 @@
 
 #include "lsm.hpp"
 
-// std::map<int, int> map;
+std::map<int, int> map;
 Catalog catalog = {
-    .bufferSize = sysconf(_SC_PAGESIZE) / (2 * sizeof(int)),
-    // .bufferSize = 3,
+    .bufferSize = BUFFER_SIZE,
     .numLevels = 0,
-    .sizeRatio = 4,
+    .sizeRatio = SIZE_RATIO,
     .levels = {nullptr},
     .pairsInLevel = {0},
     .fence = {nullptr},
+    .fenceLength = {0},
 };
 
 Stats stats = {
@@ -43,26 +43,6 @@ bool isInt(const std::string& str) {
     iss >> num;
     return iss.eof() && !iss.fail(); 
 }
-
-// `mapPut()`
-// This version of put uses a map. Used for debugging and development.
-// std::tuple<Status, std::string> mapPut(Status status, int key, int val) {
-//     map[key] = val;
-//     return std::make_tuple(status, "");
-// }
-
-// `mapGet()`
-// This version of get uses a map. Used for debugging and development.
-// std::tuple<Status, std::string> mapGet(Status status, int key) {
-//     if (map.find(key) == map.end()) {
-//         std::cout << key << " is not a member of the LSM tree." << std::endl;
-//         return std::make_tuple(status, "");
-//     } else {
-//         int val = map[key];
-//         std::cout << key << " maps to " << val << std::endl;
-//         return std::make_tuple(status, std::to_string(val));
-//     }
-// }
 
 // `constructFence()`
 // Constructs the fence pointer array at level l within the catalog.
@@ -182,25 +162,22 @@ int searchFence(size_t level, int key) {
 // value associated with the key, use `catalog.levels[l][2 * i + 1]`.
 int searchLevel(size_t level, int key) {
 
+    // The buffer, l0, is not sorted by key. All layers beneath l0 are sorted by key.
+
     if (level == 0) {
-        // The buffer, l0, is not sorted by key.
         for (size_t i = 0; i < catalog.pairsInLevel[level]; i++) {
             if (catalog.levels[level][2 * i] == key) {
                 return i;
             }
         }
     } else if (catalog.fence[level] != nullptr) {
-
         // If catalog.fence[level] exists, the level is non-empty.
         int pageIndex = searchFence(level, key);
         if (pageIndex == -1) return -1;
 
-        // All layers beneath l0 are sorted by key.
-
+        // Binary search within the page.
         int l = pageIndex * catalog.bufferSize;
         int r = std::min((pageIndex + 1) * catalog.bufferSize, catalog.pairsInLevel[level] - 1);
-
-        //int l = 0, r = catalog.pairsInLevel[level] - 1;
         while (l <= r) {
             int m = (l + r) / 2;
             if (catalog.levels[level][2 * m] == key) {
@@ -215,6 +192,26 @@ int searchLevel(size_t level, int key) {
 
     return -1;
 }
+
+// `mapPut()`
+// This version of put uses a map. Used for debugging and development.
+// std::tuple<Status, std::string> put(Status status, int key, int val) {
+//     map[key] = val;
+//     return std::make_tuple(status, "");
+// }
+
+// `mapGet()`
+// This version of get uses a map. Used for debugging and development.
+// std::tuple<Status, std::string> get(Status status, int key) {
+//     if (map.find(key) == map.end()) {
+//         std::cout << key << " is not a member of the LSM tree." << std::endl;
+//         return std::make_tuple(status, "");
+//     } else {
+//         int val = map[key];
+//         std::cout << key << " maps to " << val << std::endl;
+//         return std::make_tuple(status, std::to_string(val));
+//     }
+// }
 
 // `put()`
 // Put a key and value into the LSM tree. If the key already exists, update the value.
@@ -262,17 +259,25 @@ std::tuple<Status, std::string> get(Status status, int key) {
 }
 
 void printLevels(std::string userCommand) {
-    std::cout << "\n ——————— Printing levels. ——————— " << std::endl;
+
+    std::cout << "\n———————————————————————————————— " << std::endl;
+    std::cout << "——————— Printing levels. ——————— " << std::endl;
+    std::cout << "———————————————————————————————— \n" << std::endl;
+
     for (size_t l = 0; l < catalog.numLevels; l++) {
         int* level = catalog.levels[l];
-        if (l == 0) std::cout << "\nBuffer " << " (Capacity of " << catalog.bufferSize << " pairs = " << 2 * catalog.bufferSize * sizeof(int) << " bytes). Unsorted." << std::endl;
-        else std::cout << "\nLevel " << l << " (Capacity of " << catalog.bufferSize * std::pow(catalog.sizeRatio, l) << " pairs = " << 2 * catalog.bufferSize * std::pow(catalog.sizeRatio, l) * sizeof(int) << " bytes). Sorted." << std::endl;
 
-        if (userCommand == "p") {
-            std::cout << catalog.pairsInLevel[l] << " KV pairs. " << 2 * catalog.pairsInLevel[l] * sizeof(int) << " bytes." << std::endl;
-        } else {
+        if (l == 0) std::cout << "\n ——————— Buffer ——————— " << std::endl;
+        else std::cout << "\n ——————— Level " << l << " ——————— " << std::endl;
+
+        std::cout << "Contains: " << catalog.pairsInLevel[l] << " KV pairs = " << 2 * catalog.pairsInLevel[l] * sizeof(int) << " bytes." << std::endl;
+        std::cout << "Capacity: " << catalog.bufferSize * std::pow(catalog.sizeRatio, l) << " KV pairs = " << 2 * catalog.bufferSize * std::pow(catalog.sizeRatio, l) * sizeof(int)  << " bytes." << std::endl;
+
+        if (userCommand == "pv") {
             // Verbose printing.
-            if (catalog.fence[l] != nullptr) {
+            if (l == 0) {
+                std::cout << "Buffer is unsorted. No fence pointers." << std::endl;
+            } else if (catalog.fence[l] != nullptr) {
                 std::cout << "Fence: [";
                 for (int i = 0; i < (int)catalog.fenceLength[l] - 1; i++) {
                     std::cout << catalog.fence[l][i] << ", ";
@@ -311,7 +316,14 @@ std::tuple<Status, std::string> processCommand(std::string userCommand) {
         // std::cout << "Received  get command.\n" << std::endl;
         return get(status, std::stoi(tokens[1]));
     } else {
-        status = ERROR;
-        return std::make_tuple(status, "Invalid command.");
+        return std::make_tuple(status,
+                "Supported commands: \n\n\
+                p x y — PUT\n\
+                g x   — GET\n\
+                p     — Print levels to server.\n\
+                pv    — Print levels to server (verbose).\n\
+                s     — Shutdown and persist.\n\
+                sw    — Shutdown and wipe all data.\n"
+            );
     }
 }
