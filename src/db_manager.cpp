@@ -72,11 +72,17 @@ void constructFence(size_t l) {
 // Constructs a bloom filter boolean vector over the keys for the specified level based on the current state of the level. 
 // Called at the end of `propagateLevel()` and in `populateCatalog()`.
 void constructBloomFilter(size_t level) {
-    size_t numBits = catalog.bufferSize * BLOOM_BITS_PER_ENTRY * std::pow(catalog.sizeRatio, level);
+    size_t levelSize = catalog.bufferSize * std::pow(catalog.sizeRatio, level);
+    size_t numBits = static_cast<size_t>(-(levelSize * std::log(BLOOM_TARGET_FPR)) / std::pow(std::log(2), 2));
+    
+    // Calculate the optimal number of hash functions.
+    size_t numHashes = static_cast<size_t>((numBits / static_cast<double>(levelSize)) * std::log(2));
+    if (numHashes < 1) numHashes = 1;
+
     if (catalog.bloomfilters[level] != nullptr) {
         catalog.bloomfilters[level]->clear();
     } else {
-        catalog.bloomfilters[level] = new BloomFilter(numBits, numBits * log(2) / catalog.bufferSize);
+        catalog.bloomfilters[level] = new BloomFilter(numBits, numHashes);
     }
 
     if (catalog.levels[level] != nullptr) {
@@ -84,6 +90,8 @@ void constructBloomFilter(size_t level) {
             catalog.bloomfilters[level]->add(catalog.levels[level][2 * i]);
         }
     }
+
+    // TODO: Free bloom filters in shutdownServer().
 }
 
 // `sortLevel()`
@@ -227,14 +235,17 @@ int searchLevel(size_t level, int key) {
     return -1;
 }
 
-// `mapPut()`
+// Uncomment the two functions below and comment out the LSM tree versions in order
+// to observe how the system performs when the underlying implementation is a map.
+
+// `put()`
 // This version of put uses a map. Used for debugging and development.
 // std::tuple<Status, std::string> put(Status status, int key, int val) {
 //     map[key] = val;
 //     return std::make_tuple(status, "");
 // }
 
-// `mapGet()`
+// `get()`
 // This version of get uses a map. Used for debugging and development.
 // std::tuple<Status, std::string> get(Status status, int key) {
 //     if (map.find(key) == map.end()) {

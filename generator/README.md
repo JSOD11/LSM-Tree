@@ -1,9 +1,8 @@
-# Harvard CS265 - Big Data Systems #
+# Harvard DASLab #
 ---
-*This repository contains the code of a workload generator for an LSM tree.
-It follows the DSL specified for the systems project of CS265.*
+*This repository contains the code of a workload generator for an LSM tree.*
 
-*More information can be found [here](http://daslab.seas.harvard.edu/classes/cs265/project.html).*
+*Generator can be found [here](http://daslab.seas.harvard.edu/classes/cs265/project.html).*
 
 ## Workload and Data Generator ##
 ---

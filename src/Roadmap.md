@@ -2,13 +2,19 @@
 
 ## Main Projects
 
-- Bloom filters.
-
 - Range queries.
+
+- Restructure the design of levels to support keys and values that are different sizes.
 
 - Deletes.
 
 - Delayed updates and deletes. Add a deletes bit, and when merging only include most recent entry.
+
+- Add DICT.
+
+- Add RLE.
+
+- Add DELTA.
 
 - Add an option to use leveling or tiering.
 
@@ -23,5 +29,7 @@
 
 
 ## Complete
+
+- Bloom filters.
 
 - Build the core of an LSM tree with correct outputs.

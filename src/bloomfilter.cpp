@@ -7,18 +7,20 @@ BloomFilter::BloomFilter(size_t numBits, size_t numHashFunctions)
     : bits(numBits), numHashes(numHashFunctions) {}
 
 void BloomFilter::add(int key) {
-    std::hash<int> hashFunc;
-    for (size_t i = 0; i < numHashes; ++i) {
-        size_t hash = hashFunc(key + i) % bits.size();
-        bits[hash] = true;
+    uint32_t hash[1];
+    for (size_t i = 0; i < this->numHashes; ++i) {
+        // i is used as the seed.
+        MurmurHash3_x86_32(&key, sizeof(key), i, hash);
+       this->bits[hash[0] % this->bits.size()] = true;
     }
 }
 
 bool BloomFilter::mayContain(int key) {
-    std::hash<int> hashFunc;
-    for (size_t i = 0; i < numHashes; ++i) {
-        size_t hash = hashFunc(key + i) % bits.size();
-        if (!bits[hash]) {
+    uint32_t hash[1];
+    for (size_t i = 0; i < this->numHashes; ++i) {
+        // i is used as the seed.
+        MurmurHash3_x86_32(&key, sizeof(key), i, hash);
+        if (!this->bits[hash[0] % this->bits.size()]) {
             return false;
         }
     }

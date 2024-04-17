@@ -11,8 +11,9 @@ const int PORT = 6789;
 
 const size_t BUFFER_SIZE = sysconf(_SC_PAGESIZE) / (2 * sizeof(int));
 // const size_t BUFFER_SIZE = 3;
-const size_t SIZE_RATIO = 5;
+const size_t SIZE_RATIO = 8;
 const size_t BLOOM_BITS_PER_ENTRY = 10;
+const float BLOOM_TARGET_FPR = 0.01;
 
 enum Status {
     SUCCESS = 0,
@@ -35,7 +36,6 @@ struct Catalog {
     int* fence[10];
     size_t fenceLength[10];
     BloomFilter* bloomfilters[10];
-    // The number of bits in bloomfilters[l] is bufferSize * sizeRatio^l * bloomBitsPerEntry.
 };
 
 struct Stats {

@@ -78,9 +78,10 @@ void printStats(void) {
     std::cout << "Puts: " << stats.puts << std::endl;
     std::cout << "Successful gets: " << stats.successfulGets << std::endl;
     std::cout << "Failed gets: " << stats.failedGets << std::endl;
-    std::cout << "Calls to searchLevel(): " << stats.searchLevelCalls << std::endl;
-    std::cout << "Bloom true positives: " << stats.bloomTruePositives << std::endl;
-    std::cout << "Bloom false positives: " << stats.bloomFalsePositives << std::endl;
+    // std::cout << "Calls to searchLevel(): " << stats.searchLevelCalls << std::endl;
+    // std::cout << "Bloom true positives: " << stats.bloomTruePositives << std::endl;
+    // std::cout << "Bloom false positives: " << stats.bloomFalsePositives << std::endl;
+    std::cout << "Bloom FPR: " << (float)stats.bloomFalsePositives / (float)(stats.bloomFalsePositives + (stats.searchLevelCalls - stats.bloomTruePositives)) << std::endl;
     std::cout << "\n —————————————————————————— \n" << std::endl;
 }
 
@@ -88,7 +89,9 @@ int main() {
 
     std::cout << "\nStarting up server...\n" << std::endl;
     std::cout << "Buffer size: " << BUFFER_SIZE << std::endl;
-    std::cout << "Size ratio: " << SIZE_RATIO << "\n" << std::endl;
+    std::cout << "Size ratio: " << SIZE_RATIO << std::endl;
+    std::cout << "Bloom bits per entry: " << BLOOM_BITS_PER_ENTRY << std::endl;
+    std::cout << "Bloom target FPR: " << BLOOM_TARGET_FPR << "\n" << std::endl;
 
     populateCatalog();
 

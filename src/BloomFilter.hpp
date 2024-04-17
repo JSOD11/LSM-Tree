@@ -3,9 +3,11 @@
 
 #include <vector>
 
+#include "MurmurHash3.hpp"
+
 class BloomFilter {
 private:
-    std::vector<bool> bits; // TODO: Change this to a bitset.
+    std::vector<bool> bits;
     size_t numHashes;
 
 public:

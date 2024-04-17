@@ -5,8 +5,8 @@ CFLAGS=-Wall -Wextra -g
 all: server client
 
 # Server
-server: server.o db_manager.o bloomfilter.o
-	$(CC) $(CFLAGS) -o server server.o db_manager.o bloomfilter.o
+server: server.o db_manager.o bloomfilter.o MurmurHash3.o
+	$(CC) $(CFLAGS) -o server server.o db_manager.o bloomfilter.o MurmurHash3.o
 
 server.o: server.cpp db_manager.hpp bloomfilter.hpp
 	$(CC) $(CFLAGS) -c server.cpp
@@ -14,8 +14,11 @@ server.o: server.cpp db_manager.hpp bloomfilter.hpp
 db_manager.o: db_manager.cpp db_manager.hpp bloomfilter.hpp
 	$(CC) $(CFLAGS) -c db_manager.cpp
 
-bloomfilter.o: bloomfilter.cpp bloomfilter.hpp
+bloomfilter.o: bloomfilter.cpp bloomfilter.hpp MurmurHash3.hpp
 	$(CC) $(CFLAGS) -c bloomfilter.cpp
+
+MurmurHash3.o: MurmurHash3.cpp MurmurHash3.hpp
+	$(CC) $(CFLAGS) -c MurmurHash3.cpp
 
 # Client
 client: client.o
