@@ -2,8 +2,6 @@
 
 ## Main Projects
 
-- Range queries.
-
 - Restructure the design of levels to support keys and values that are different sizes.
 
 - Deletes.
@@ -16,12 +14,14 @@
 
 - Add DELTA.
 
+- Add testing infrastructure.
+
 - Add an option to use leveling or tiering.
 
 
 ## Smaller projects
 
-- Refactor static arrays in the Catalog to be std::vectors.
+- Refactor static arrays in the Catalog to be std::vectors. Make LSM tree resize infinitely.
 
 - Rearrange bloom filter bit distribution like in Monkey paper.
 
@@ -29,6 +29,8 @@
 
 
 ## Complete
+
+- Range queries.
 
 - Bloom filters.
 

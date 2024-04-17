@@ -24,6 +24,11 @@ Stats stats = {
     .puts = 0,
     .successfulGets = 0,
     .failedGets = 0,
+    .ranges = 0,
+    .rangeLengthSum = 0,
+    .searchLevelCalls = 0,
+    .bloomTruePositives = 0,
+    .bloomFalsePositives = 0,
 };
 
 std::vector<std::string> parseCommand(std::string userCommand) {
@@ -122,6 +127,12 @@ void sortLevel(size_t l) {
 // `propogateLevel()`
 // Writes all the KV pairs from level l to level l + 1, then resets level l.
 void propogateLevel(size_t l) {
+
+    if (l == 9) {
+        std::cout << "LSM tree currently has a finite size, which has been reached. Shutting down." << std::endl;
+        std::abort();
+    }
+
     if (l == catalog.numLevels - 1) {
         // We need to create the next level, then copy everything into it.
         std::string dataFileName = "data/l" + std::to_string(l + 1) + ".data";
@@ -165,6 +176,9 @@ void propogateLevel(size_t l) {
     constructBloomFilter(l + 1);
 }
 
+// `searchFence()`
+// Searches through the fence pointers at level l for the specified key.
+// Returns the page on which the key will be found if it exists.
 int searchFence(size_t level, int key) {
     // Binary search through the fence pointers to get the target page.
     int l = 0, r = catalog.fenceLength[level] - 1;
@@ -194,11 +208,22 @@ bool searchBloomFilter(size_t level, int key) {
 // Searches for a key within level l of the LSM tree. Returns the index i
 // of the key if it exists within the level, or -1 otherwise. To extract the
 // value associated with the key, use `catalog.levels[l][2 * i + 1]`.
-int searchLevel(size_t level, int key) {
+//
+// `searchLevel()` contains a switch that allows it to be used for range queries.
+// For a range query, in the case that the target key does not exist, we return the 
+// smallest value larger than `key`. For a leftBound, this means we will get only
+// values larger than the leftBound, which is correct. This is correct for rightBounds
+// because the rightBound in these range queries is an exclusive bound.
+int searchLevel(size_t level, int key, bool range) {
 
-    stats.searchLevelCalls++;
+    if (!range) stats.searchLevelCalls++;
+    if (!range && !searchBloomFilter(level, key)) return -1;
 
-    if (!searchBloomFilter(level, key)) return -1;
+    if (range) {
+        // Key is outside the range of values in the level. Return 0 or len(level) - 1.
+        if (key < catalog.levels[level][0]) return 0;
+        if (key > catalog.levels[level][2 * (catalog.pairsInLevel[level] - 1)]) return catalog.pairsInLevel[level];
+    }
 
     // The buffer, l0, is not sorted by key. All layers beneath l0 are sorted by key.
 
@@ -227,12 +252,33 @@ int searchLevel(size_t level, int key) {
                     r = m - 1;
                 }
             }
+            if (range) {
+                if (l > (int)catalog.pairsInLevel[level]) l = catalog.pairsInLevel[level];
+                return l;
+            }
         }
+    } else {
+        // If the level is empty and we're doing a range query, we just return 0 for both
+        // the leftBound index and rightBound index.
+        if (range) return 0;
     }
 
     stats.bloomFalsePositives++;
     // std::cout << "Bloom False Positive. ";
     return -1;
+}
+
+std::string vectorToString(const std::vector<int>& vec) {
+    std::stringstream ss;
+    ss << "[";
+    if (!vec.empty()) {
+        for (size_t i = 0; i < vec.size() - 1; ++i) {
+            ss << vec[i] << ", ";
+        }
+        ss << vec.back();
+    }
+    ss << "]";
+    return ss.str();
 }
 
 // Uncomment the two functions below and comment out the LSM tree versions in order
@@ -241,6 +287,7 @@ int searchLevel(size_t level, int key) {
 // `put()`
 // This version of put uses a map. Used for debugging and development.
 // std::tuple<Status, std::string> put(Status status, int key, int val) {
+//     stats.puts++;
 //     map[key] = val;
 //     return std::make_tuple(status, "");
 // }
@@ -249,13 +296,34 @@ int searchLevel(size_t level, int key) {
 // This version of get uses a map. Used for debugging and development.
 // std::tuple<Status, std::string> get(Status status, int key) {
 //     if (map.find(key) == map.end()) {
-//         std::cout << key << " is not a member of the LSM tree." << std::endl;
+//         // std::cout << key << " is not a member of the LSM tree." << std::endl;
+//         stats.failedGets++;
 //         return std::make_tuple(status, "");
 //     } else {
 //         int val = map[key];
-//         std::cout << key << " maps to " << val << std::endl;
+//         stats.successfulGets++;
+//         // std::cout << key << " maps to " << val << std::endl;
 //         return std::make_tuple(status, std::to_string(val));
 //     }
+// }
+
+// `range()`
+// This version of range uses a map.
+// std::tuple<Status, std::string> range(Status status, int leftBound, int rightBound) {
+
+//     stats.ranges++;
+
+//     std::vector<int> results;
+
+//     for (int i = leftBound; i < rightBound; i++) {
+//         if (map.find(i) != map.end()) {
+//             results.push_back(map[i]);
+//         }
+//     }
+
+//     std::cout << "Range query size: " << results.size() << std::endl;
+//     stats.rangeLengthSum += results.size();
+//     return std::make_tuple(status, vectorToString(results));
 // }
 
 // `put()`
@@ -266,7 +334,7 @@ std::tuple<Status, std::string> put(Status status, int key, int val) {
 
     // Search through each level of the LSM tree. If the key already exists, update it.
     for (size_t l = 0; l < catalog.numLevels; l++) {
-        int i = searchLevel(l, key);
+        int i = searchLevel(l, key, false);
         if (i >= 0) {
             catalog.levels[l][2 * i + 1] = val;
             return std::make_tuple(status, "");
@@ -291,17 +359,47 @@ std::tuple<Status, std::string> get(Status status, int key) {
 
     // Search through each level of the LSM tree.
     for (size_t l = 0; l < catalog.numLevels; l++) {
-        int i = searchLevel(l, key);
+        int i = searchLevel(l, key, false);
         if (i >= 0) {
-            std::cout << "Level " << l << ": " << key << " maps to " << catalog.levels[l][2 * i + 1] << std::endl;
+            // std::cout << "Level " << l << ": " << key << " maps to " << catalog.levels[l][2 * i + 1] << std::endl;
             stats.successfulGets++;
             return std::make_tuple(status, std::to_string(catalog.levels[l][2 * i + 1]));
         }
     }
 
-    std::cout << key << " is not a member of the LSM tree." << std::endl;
+    // std::cout << key << " is not a member of the LSM tree." << std::endl;
     stats.failedGets++;
     return std::make_tuple(status, "");
+}
+
+// `range()`
+// Conduct a range query within the LSM tree.
+std::tuple<Status, std::string> range(Status status, int leftBound, int rightBound) {
+
+    stats.ranges++;
+
+    std::vector<int> results;
+
+    // A range query must search through every level of the LSM tree.
+    for (size_t l = 0; l < catalog.numLevels; l++) {
+        if (l == 0) {
+            for (size_t i = 0; i < catalog.pairsInLevel[0]; i++) {
+                if ((leftBound <= catalog.levels[l][2 * i]) && (catalog.levels[l][2 * i] < rightBound)) {
+                    results.push_back(catalog.levels[l][2 * i + 1]);
+                }
+            }
+        } else {
+            size_t startIndex = searchLevel(l, leftBound, true);
+            size_t endIndex = searchLevel(l, rightBound, true);
+            for (size_t i = startIndex; i < endIndex; i++) {
+                results.push_back(catalog.levels[l][2 * i + 1]);
+            }
+        }
+    }
+
+    std::cout << "Range query bounds: [" << leftBound << ", " << rightBound << "], Range query size: " << results.size() << std::endl;
+    stats.rangeLengthSum += results.size();
+    return std::make_tuple(status, vectorToString(results));
 }
 
 void printLevels(std::string userCommand) {
@@ -366,11 +464,15 @@ std::tuple<Status, std::string> processCommand(std::string userCommand) {
     } else if (tokens[0] == "g" && tokens.size() == 2 && isInt(tokens[1])) {
         // std::cout << "Received  get command.\n" << std::endl;
         return get(status, std::stoi(tokens[1]));
+    } else if (tokens[0] == "r" && tokens.size() == 3 && isInt(tokens[1]) && isInt(tokens[2])) {
+        // std::cout << "Received range query command.\n" <<  std::endl;
+        return range(status, std::stoi(tokens[1]), std::stoi(tokens[2]));
     } else {
         return std::make_tuple(status,
                 "Supported commands: \n\n\
                 p x y — PUT\n\
                 g x   — GET\n\
+                r x y — RANGE\n\
                 p     — Print levels to server.\n\
                 pv    — Print levels to server (verbose).\n\
                 s     — Shutdown and persist.\n\

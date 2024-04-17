@@ -78,6 +78,8 @@ void printStats(void) {
     std::cout << "Puts: " << stats.puts << std::endl;
     std::cout << "Successful gets: " << stats.successfulGets << std::endl;
     std::cout << "Failed gets: " << stats.failedGets << std::endl;
+    std::cout << "Ranges: " << stats.ranges << std::endl;
+    std::cout << "Sum length of all ranges: " << stats.rangeLengthSum << std::endl;
     // std::cout << "Calls to searchLevel(): " << stats.searchLevelCalls << std::endl;
     // std::cout << "Bloom true positives: " << stats.bloomTruePositives << std::endl;
     // std::cout << "Bloom false positives: " << stats.bloomFalsePositives << std::endl;

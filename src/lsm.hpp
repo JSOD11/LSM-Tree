@@ -10,7 +10,7 @@
 const int PORT = 6789;
 
 const size_t BUFFER_SIZE = sysconf(_SC_PAGESIZE) / (2 * sizeof(int));
-// const size_t BUFFER_SIZE = 3;
+// const size_t BUFFER_SIZE = 5;
 const size_t SIZE_RATIO = 8;
 const size_t BLOOM_BITS_PER_ENTRY = 10;
 const float BLOOM_TARGET_FPR = 0.01;
@@ -42,6 +42,8 @@ struct Stats {
     size_t puts;
     size_t successfulGets;
     size_t failedGets;
+    size_t ranges;
+    double rangeLengthSum;
     size_t searchLevelCalls;
     size_t bloomTruePositives;
     size_t bloomFalsePositives;
