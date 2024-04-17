@@ -17,6 +17,7 @@ Catalog catalog = {
     .pairsInLevel = {0},
     .fence = {nullptr},
     .fenceLength = {0},
+    .bloomfilters = {nullptr},
 };
 
 Stats stats = {
@@ -65,6 +66,24 @@ void constructFence(size_t l) {
     }
 
     // TODO: Free fence pointers in shutdownServer().
+}
+
+// `constructBloomFilter()`
+// Constructs a bloom filter boolean vector over the keys for the specified level based on the current state of the level. 
+// Called at the end of `propagateLevel()` and in `populateCatalog()`.
+void constructBloomFilter(size_t level) {
+    size_t numBits = catalog.bufferSize * BLOOM_BITS_PER_ENTRY * std::pow(catalog.sizeRatio, level);
+    if (catalog.bloomfilters[level] != nullptr) {
+        catalog.bloomfilters[level]->clear();
+    } else {
+        catalog.bloomfilters[level] = new BloomFilter(numBits, numBits * log(2) / catalog.bufferSize);
+    }
+
+    if (catalog.levels[level] != nullptr) {
+        for (size_t i = 0; i < catalog.pairsInLevel[level]; i++) {
+            catalog.bloomfilters[level]->add(catalog.levels[level][2 * i]);
+        }
+    }
 }
 
 // `sortLevel()`
@@ -133,6 +152,9 @@ void propogateLevel(size_t l) {
         catalog.fence[l] = nullptr;
         catalog.fenceLength[l] = 0;
     }
+
+    catalog.bloomfilters[l]->clear();
+    constructBloomFilter(l + 1);
 }
 
 int searchFence(size_t level, int key) {
@@ -156,40 +178,52 @@ int searchFence(size_t level, int key) {
     return r;
 }
 
+bool searchBloomFilter(size_t level, int key) {
+    return catalog.bloomfilters[level]->mayContain(key);
+}
+
 // `searchLevel()`
 // Searches for a key within level l of the LSM tree. Returns the index i
 // of the key if it exists within the level, or -1 otherwise. To extract the
 // value associated with the key, use `catalog.levels[l][2 * i + 1]`.
 int searchLevel(size_t level, int key) {
 
+    stats.searchLevelCalls++;
+
+    if (!searchBloomFilter(level, key)) return -1;
+
     // The buffer, l0, is not sorted by key. All layers beneath l0 are sorted by key.
 
     if (level == 0) {
         for (size_t i = 0; i < catalog.pairsInLevel[level]; i++) {
             if (catalog.levels[level][2 * i] == key) {
+                stats.bloomTruePositives++;
                 return i;
             }
         }
     } else if (catalog.fence[level] != nullptr) {
         // If catalog.fence[level] exists, the level is non-empty.
         int pageIndex = searchFence(level, key);
-        if (pageIndex == -1) return -1;
-
-        // Binary search within the page.
-        int l = pageIndex * catalog.bufferSize;
-        int r = std::min((pageIndex + 1) * catalog.bufferSize, catalog.pairsInLevel[level] - 1);
-        while (l <= r) {
-            int m = (l + r) / 2;
-            if (catalog.levels[level][2 * m] == key) {
-                return m;
-            } else if (catalog.levels[level][2 * m] < key) {
-                l = m + 1;
-            } else {
-                r = m - 1;
+        if (pageIndex != -1) {
+            // Binary search within the page.
+            int l = pageIndex * catalog.bufferSize;
+            int r = std::min((pageIndex + 1) * catalog.bufferSize, catalog.pairsInLevel[level] - 1);
+            while (l <= r) {
+                int m = (l + r) / 2;
+                if (catalog.levels[level][2 * m] == key) {
+                    stats.bloomTruePositives++;
+                    return m;
+                } else if (catalog.levels[level][2 * m] < key) {
+                    l = m + 1;
+                } else {
+                    r = m - 1;
+                }
             }
         }
     }
 
+    stats.bloomFalsePositives++;
+    // std::cout << "Bloom False Positive. ";
     return -1;
 }
 
@@ -231,6 +265,7 @@ std::tuple<Status, std::string> put(Status status, int key, int val) {
     catalog.levels[0][2 * catalog.pairsInLevel[0]] = key;
     catalog.levels[0][2 * catalog.pairsInLevel[0] + 1] = val;
     catalog.pairsInLevel[0]++;
+    catalog.bloomfilters[0]->add(key);
 
     if (catalog.pairsInLevel[0] == catalog.bufferSize) {
         propogateLevel(0);
@@ -284,6 +319,11 @@ void printLevels(std::string userCommand) {
                 }
                 std::cout << catalog.fence[l][catalog.fenceLength[l] - 1] << "]" << std::endl;
             }
+            std::cout << "Bloom: [";
+            for (int i = 0; i < (int)catalog.bloomfilters[l]->numBits() - 1; i++) {
+                std::cout << catalog.bloomfilters[l]->getBit(i) << ", ";
+            }
+            std::cout << catalog.bloomfilters[l]->getBit(catalog.bloomfilters[l]->numBits() - 1) << "]" << std::endl;
             for (size_t i = 0; i < catalog.pairsInLevel[l]; i++) {
                 std::cout << level[2 * i] << " -> " << level[2 * i + 1] << std::endl;
             }

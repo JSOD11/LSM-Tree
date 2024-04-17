@@ -5,12 +5,14 @@
 #include <string>
 #include <map>
 
+#include "BloomFilter.hpp"
+
 const int PORT = 6789;
 
 const size_t BUFFER_SIZE = sysconf(_SC_PAGESIZE) / (2 * sizeof(int));
 // const size_t BUFFER_SIZE = 3;
-const size_t SIZE_RATIO = 8;
-const size_t bloomBitsPerEntry = 10;
+const size_t SIZE_RATIO = 5;
+const size_t BLOOM_BITS_PER_ENTRY = 10;
 
 enum Status {
     SUCCESS = 0,
@@ -24,7 +26,7 @@ struct Message {
 };
 
 struct Catalog {
-    // The buffer size is the number of KV pairs in l0 (usually set to fill one page).
+    // The buffer size is the number of KV pairs in l0 (usually a multiple of the page size).
     size_t bufferSize;
     size_t numLevels;
     size_t sizeRatio;
@@ -32,14 +34,17 @@ struct Catalog {
     size_t pairsInLevel[10];
     int* fence[10];
     size_t fenceLength[10];
-    // bloom[l] stores the bloom filter bit array for level l. The size of bloom[l] is
-    // bufferSize * sizeRatio^l * bloomBitsPerEntry bits.
+    BloomFilter* bloomfilters[10];
+    // The number of bits in bloomfilters[l] is bufferSize * sizeRatio^l * bloomBitsPerEntry.
 };
 
 struct Stats {
     size_t puts;
     size_t successfulGets;
     size_t failedGets;
+    size_t searchLevelCalls;
+    size_t bloomTruePositives;
+    size_t bloomFalsePositives;
 };
 
 extern std::map<int, int> map;

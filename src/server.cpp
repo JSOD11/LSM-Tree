@@ -26,6 +26,7 @@ void populateCatalog(void) {
         ftruncate(fd, fileSize);
         void* levelPointer = mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         catalog.levels[0] = reinterpret_cast<int*>(levelPointer);
+        constructBloomFilter(0);
 
         catalog.numLevels++;
     } else {
@@ -44,6 +45,7 @@ void populateCatalog(void) {
             catalog.levels[l] = reinterpret_cast<int*>(levelPointer);
             catalog.pairsInLevel[l] = numPairs;
             constructFence(l);
+            constructBloomFilter(l);
 
             catalog.numLevels++;
             l++;
@@ -72,11 +74,14 @@ void shutdownServer(std::string userCommand) {
 }
 
 void printStats(void) {
-    std::cout << "\n ——— Session stats ——— \n" << std::endl;
+    std::cout << "\n ——— Session statistics ——— \n" << std::endl;
     std::cout << "Puts: " << stats.puts << std::endl;
     std::cout << "Successful gets: " << stats.successfulGets << std::endl;
     std::cout << "Failed gets: " << stats.failedGets << std::endl;
-    std::cout << "\n ————————————————————— \n" << std::endl;
+    std::cout << "Calls to searchLevel(): " << stats.searchLevelCalls << std::endl;
+    std::cout << "Bloom true positives: " << stats.bloomTruePositives << std::endl;
+    std::cout << "Bloom false positives: " << stats.bloomFalsePositives << std::endl;
+    std::cout << "\n —————————————————————————— \n" << std::endl;
 }
 
 int main() {
