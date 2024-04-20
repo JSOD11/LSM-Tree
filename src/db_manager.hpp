@@ -6,6 +6,14 @@
 
 #include "lsm.hpp"
 
+struct Level {
+    int* data = nullptr;
+    size_t numPairs = 0;
+    int* fence = nullptr;
+    size_t fenceLength = 0;
+    BloomFilter* bloomFilter = nullptr;
+};
+
 class Catalog {
     private:
         // The buffer size is the number of KV pairs in l0 (usually a multiple of the page size).
@@ -13,17 +21,14 @@ class Catalog {
         size_t bufferSize = BUFFER_SIZE;
         size_t numLevels = 0;
         size_t sizeRatio = SIZE_RATIO;
-        int* levels[10] = {nullptr};
-        size_t pairsInLevel[10] = {0};
-        int* fence[10] = {nullptr};
-        size_t fenceLength[10] = {0};
-        BloomFilter* bloomfilters[10] = {nullptr};
+        std::vector<Level*> levels = {};
     
     public:
         size_t getBufferSize();
         size_t getNumLevels();
         size_t getSizeRatio();
-        int* getLevel(size_t l);
+        Level* getLevel(size_t l);
+        int* getLevelData(size_t l);
         size_t getPairsInLevel(size_t l);
         bool levelIsEmpty(size_t level);
         int getFenceKey(size_t l, size_t index);

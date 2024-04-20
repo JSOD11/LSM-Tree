@@ -26,12 +26,16 @@ size_t Catalog::getSizeRatio() {
     return this->sizeRatio;
 }
 
-int* Catalog::getLevel(size_t l) {
+Level* Catalog::getLevel(size_t l) {
     return this->levels[l];
 }
 
+int* Catalog::getLevelData(size_t l) {
+    return this->getLevel(l)->data;
+}
+
 size_t Catalog::getPairsInLevel(size_t l) {
-    return this->pairsInLevel[l];
+    return this->getLevel(l)->numPairs;
 }
 
 bool Catalog::levelIsEmpty(size_t l) {
@@ -39,21 +43,26 @@ bool Catalog::levelIsEmpty(size_t l) {
 }
 
 int Catalog::getFenceKey(size_t l, size_t index) {
-    assert(this->fence[l] != nullptr);
-    return this->fence[l][index];
+    assert(this->getLevel(l)->fence != nullptr);
+    return this->getLevel(l)->fence[index];
 }
 
 size_t Catalog::getFenceLength(size_t l) {
-    return this->fenceLength[l];
+    return this->getLevel(l)->fenceLength;
 }
 
 BloomFilter* Catalog::getBloomFilter(size_t l) {
-    return this->bloomfilters[l];
+    return this->getLevel(l)->bloomFilter;
 }
 
+
 void Catalog::initializeLevel(size_t l, int* levelPointer, size_t numPairs) {
-    this->levels[l] = levelPointer;
-    this->pairsInLevel[l] = numPairs;
+    // This function should only be called when we are creating a new level from scratch.
+    assert(l == this->levels.size());
+    Level* newLevel = new Level;
+    newLevel->data = levelPointer;
+    newLevel->numPairs = numPairs;
+    this->levels.push_back(newLevel);
     this->numLevels++;
 
     this->constructFence(l);
@@ -62,11 +71,11 @@ void Catalog::initializeLevel(size_t l, int* levelPointer, size_t numPairs) {
 
 // `appendPair()`
 // Appends a new KV pair at the end of the specified level.
-void Catalog::appendPair(size_t level, int key, int val) {
-    this->levels[level][2 * this->getPairsInLevel(level)] = key;
-    this->levels[level][2 * this->getPairsInLevel(level) + 1] = val;
-    this->pairsInLevel[level]++;
-    this->bloomfilters[level]->add(key);
+void Catalog::appendPair(size_t l, int key, int val) {
+    this->getLevel(l)->data[2 * this->getPairsInLevel(l)] = key;
+    this->getLevel(l)->data[2 * this->getPairsInLevel(l) + 1] = val;
+    this->getLevel(l)->numPairs++;
+    this->getLevel(l)->bloomFilter->add(key);
     return;
 }
 
@@ -74,26 +83,26 @@ void Catalog::appendPair(size_t level, int key, int val) {
 // Inserts a KV pair at the specified index within a level. Be careful with this
 // and only use it when redesigning an entire level, or only modifying values,
 // as it does not update bloom filters.
-void Catalog::insertPair(size_t level, size_t pairIndex, int key, int val) {
-    this->levels[level][2 * pairIndex] = key;
-    this->levels[level][2 * pairIndex + 1] = val;
+void Catalog::insertPair(size_t l, size_t pairIndex, int key, int val) {
+    this->getLevel(l)->data[2 * pairIndex] = key;
+    this->getLevel(l)->data[2 * pairIndex + 1] = val;
     return;
 }
 
-int Catalog::getKey(size_t level, size_t entryIndex) {
-    return this->levels[level][2 * entryIndex];
+int Catalog::getKey(size_t l, size_t entryIndex) {
+    return this->getLevel(l)->data[2 * entryIndex];
 }
 
-int Catalog::getVal(size_t level, size_t entryIndex) {
-    return this->levels[level][2 * entryIndex + 1];
+int Catalog::getVal(size_t l, size_t entryIndex) {
+    return this->getLevel(l)->data[2 * entryIndex + 1];
 }
 
 // `mmapLevel()`
 // Takes in the name of a file for a level and the level number. Returns an int* pointing to the
 // start of the level array.
-int* mmapLevel(const char* fileName, size_t level) {
+int* mmapLevel(const char* fileName, size_t l) {
     int fd = open(fileName, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-    size_t fileSize = 2 * catalog.getBufferSize() * sizeof(int) * std::pow(catalog.getSizeRatio(), level);
+    size_t fileSize = 2 * catalog.getBufferSize() * sizeof(int) * std::pow(catalog.getSizeRatio(), l);
     ftruncate(fd, fileSize);
     return reinterpret_cast<int*>(mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
 }
@@ -123,18 +132,20 @@ void Catalog::constructFence(size_t l) {
     if (l == 0) return;
 
     if (!this->levelIsEmpty(l)) {
-        delete[] catalog.fence[l];
+        delete[] catalog.getLevel(l)->fence;
     }
 
-    catalog.fenceLength[l] = std::ceil(static_cast<double>(catalog.pairsInLevel[l]) / catalog.pageSize);
+    this->getLevel(l)->fenceLength = std::ceil(static_cast<double>(this->getLevel(l)->numPairs) / catalog.pageSize);
+    // catalog.fenceLength[l] = std::ceil(static_cast<double>(catalog.pairsInLevel[l]) / catalog.pageSize);
 
-    catalog.fence[l] = new int[catalog.fenceLength[l]];
-    for (size_t i = 0, j = 0; i < catalog.fenceLength[l]; i++, j += catalog.pageSize) {
-        if (j >= catalog.pairsInLevel[l]) {
+    // catalog.fence[l] = new int[catalog.fenceLength[l]];
+    this->getLevel(l)->fence = new int[this->getLevel(l)->fenceLength];
+    for (size_t i = 0, j = 0; i < this->getLevel(l)->fenceLength; i++, j += this->pageSize) {
+        if (j >= this->getLevel(l)->numPairs) {
             std::cout << "constructFence(): Out of bounds access error." << std::endl;
             return;
         }
-        catalog.fence[l][i] = catalog.getKey(l, j);
+        this->getLevel(l)->fence[i] = this->getKey(l, j);
     }
 
     // TODO: Free fence pointers in shutdownServer().
@@ -143,23 +154,24 @@ void Catalog::constructFence(size_t l) {
 // `constructBloomFilter()`
 // Constructs a bloom filter boolean vector over the keys for the specified level based on the current state of the level. 
 // Called at the end of `propagateLevel()` and in `populateCatalog()`.
-void Catalog::constructBloomFilter(size_t level) {
-    size_t levelSize = catalog.bufferSize * std::pow(catalog.sizeRatio, level);
+void Catalog::constructBloomFilter(size_t l) {
+    size_t levelSize = catalog.bufferSize * std::pow(catalog.sizeRatio, l);
     size_t numBits = static_cast<size_t>(-(levelSize * std::log(BLOOM_TARGET_FPR)) / std::pow(std::log(2), 2));
     
     // Calculate the optimal number of hash functions.
     size_t numHashes = static_cast<size_t>((numBits / static_cast<double>(levelSize)) * std::log(2));
     if (numHashes < 1) numHashes = 1;
 
-    if (catalog.bloomfilters[level] != nullptr) {
-        catalog.bloomfilters[level]->clear();
+    if (this->getLevel(l)->bloomFilter != nullptr) {
+        this->getLevel(l)->bloomFilter->clear();
     } else {
-        catalog.bloomfilters[level] = new BloomFilter(numBits, numHashes);
+        this->getLevel(l)->bloomFilter = new BloomFilter(numBits, numHashes);
     }
 
-    if (catalog.levels[level] != nullptr) {
-        for (size_t i = 0; i < catalog.pairsInLevel[level]; i++) {
-            catalog.bloomfilters[level]->add(catalog.levels[level][2 * i]);
+    if (!this->levelIsEmpty(l)) {
+        for (size_t i = 0; i < this->getPairsInLevel(l); i++) {
+            int key = this->getKey(l, i);
+            this->getLevel(l)->bloomFilter->add(key);
         }
     }
 
@@ -188,20 +200,19 @@ void sortLevel(size_t l) {
     }
 
     catalog.constructFence(l);
-    catalog.constructBloomFilter(l + 1);
+    catalog.constructBloomFilter(l);
 }
 
 // `clearLevel()`
 // Clears the specified level by resetting the number of pairs to 0, deleting the fence, and
 // clearing the bloom filter. Does not reset all values in the level array.
 void Catalog::clearLevel(size_t l) {
-    this->pairsInLevel[l] = 0;
-    if (l > 0 && catalog.fence[l] != nullptr) {
-        delete[] catalog.fence[l];
-        catalog.fence[l] = nullptr;
-        catalog.fenceLength[l] = 0;
-    }
-    catalog.bloomfilters[l]->clear();
+
+    this->getLevel(l)->numPairs = 0;
+    delete[] this->getLevel(l)->fence;
+    this->getLevel(l)->fence = nullptr;
+    this->getLevel(l)->fenceLength = 0;
+    this->getLevel(l)->bloomFilter->clear();
 }
 
 // `propagateData()`
@@ -289,7 +300,7 @@ int searchLevel(size_t level, int key, bool range) {
     if (level == 0) {
         for (size_t i = 0; i < catalog.getPairsInLevel(level); i++) {
             if (catalog.getKey(level, i) == key) {
-                stats.bloomTruePositives++;
+                if (!range) stats.bloomTruePositives++;
                 return i;
             }
         }
@@ -306,7 +317,7 @@ int searchLevel(size_t level, int key, bool range) {
             while (l <= r) {
                 int m = (l + r) / 2;
                 if (catalog.getKey(level, m) == key) {
-                    stats.bloomTruePositives++;
+                    if (!range) stats.bloomTruePositives++;
                     return m;
                 } else if (catalog.getKey(level, m) < key) {
                     l = m + 1;
