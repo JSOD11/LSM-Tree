@@ -12,8 +12,9 @@
 #include <fstream>
 #include <cmath>
 
-#include "lsm.hpp"
-#include "db_manager.hpp"
+#include "Types.hpp"
+#include "Utils.hpp"
+#include "LSM.hpp"
 
 // `populateCatalog()`
 // Populates the catalog with persisted data or creates a data folder if one does not exist.
@@ -23,18 +24,18 @@ void populateCatalog(void) {
 
     if (!std::filesystem::exists("data/catalog.data")) {
         // The database is being started from scratch. We start just with l0.
-        int* keysPointer = mmapLevel("data/k0.data", 0);
-        int* valsPointer = mmapLevel("data/v0.data", 0);
-        catalog.initializeLevel(0, keysPointer, valsPointer, 0);
+        KEY_TYPE* keysPointer = mmapLevel<KEY_TYPE>("data/k0.data", 0);
+        VAL_TYPE* valsPointer = mmapLevel<VAL_TYPE>("data/v0.data", 0);
+        lsm.initializeLevel(0, keysPointer, valsPointer, 0);
         std::cout << "Started new database from scratch.\n" << std::endl;
     } else {
         // We are populating the catalog with persisted data.
         std::ifstream catalogFile("data/catalog.data");
         size_t numPairs = 0, l = 0;
         while (catalogFile >> numPairs) {
-            int* keysPointer = mmapLevel(("data/k" + std::to_string(l) + ".data").c_str(), l);
-            int* valsPointer = mmapLevel(("data/v" + std::to_string(l) + ".data").c_str(), l);
-            catalog.initializeLevel(l, keysPointer, valsPointer, numPairs);
+            KEY_TYPE* keysPointer = mmapLevel<KEY_TYPE>(("data/k" + std::to_string(l) + ".data").c_str(), l);
+            VAL_TYPE* valsPointer = mmapLevel<VAL_TYPE>(("data/v" + std::to_string(l) + ".data").c_str(), l);
+            lsm.initializeLevel(l, keysPointer, valsPointer, numPairs);
             l++;
         }
         std::cout << "Loaded persisted data.\n" << std::endl;
@@ -51,17 +52,17 @@ void shutdownServer(std::string userCommand) {
     } else {
         // Write the number of pairs per level into the catalog file.
         std::ofstream catalogFile("data/catalog.data", std::ios::out);
-        for (size_t i = 0; i < catalog.getNumLevels(); i++) {
-            catalogFile << catalog.getPairsInLevel(i) << std::endl;
+        for (size_t i = 0; i < lsm.getNumLevels(); i++) {
+            catalogFile << lsm.getPairsInLevel(i) << std::endl;
         }
         catalogFile.close();
         std::cout << "Persisted data folder." << std::endl;
     }
 
-    for (size_t l = 0; l < catalog.getNumLevels(); l++) {
-        munmap(catalog.getLevel(l)->keys, catalog.getPairsInLevel(l) * sizeof(int));
-        munmap(catalog.getLevel(l)->vals, catalog.getPairsInLevel(l) * sizeof(int));
-        delete catalog.getLevel(l);
+    for (size_t l = 0; l < lsm.getNumLevels(); l++) {
+        munmap(lsm.getLevel(l)->keys, lsm.getPairsInLevel(l) * sizeof(KEY_TYPE));
+        munmap(lsm.getLevel(l)->vals, lsm.getPairsInLevel(l) * sizeof(VAL_TYPE));
+        delete lsm.getLevel(l);
     }
 }
 
@@ -82,7 +83,7 @@ void printStats(void) {
 int main() {
 
     std::cout << "\nStarting up server...\n" << std::endl;
-    std::cout << "Buffer size: " << BUFFER_SIZE << std::endl;
+    std::cout << "Buffer size: " << lsm.getBufferSize() << std::endl;
     std::cout << "Size ratio: " << SIZE_RATIO << std::endl;
     std::cout << "Bloom target FPR: " << BLOOM_TARGET_FPR << "\n" << std::endl;
 
@@ -143,10 +144,7 @@ int main() {
     }
 
     shutdownServer(userCommand);
-
     printStats();
-
     close(clientSocket);
-
     return 0;
 }

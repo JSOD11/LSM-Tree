@@ -68,6 +68,8 @@
         "iomanip": "cpp",
         "map": "cpp",
         "stack": "cpp",
-        "filesystem": "cpp"
+        "filesystem": "cpp",
+        "charconv": "cpp",
+        "execution": "cpp"
     }
 }

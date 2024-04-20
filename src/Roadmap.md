@@ -2,8 +2,6 @@
 
 ## Main Projects
 
-- Restructure the design of levels to support keys and values that are different sizes.
-
 - Out of place updates.
 
 - Deletes.
@@ -16,6 +14,8 @@
 
 - Add testing infrastructure.
 
+- Add benchmarks and conduct experiments.
+
 - Add an option to use leveling or tiering.
 
 
@@ -27,6 +27,8 @@
 
 
 ## Complete
+
+- Restructure the design of levels to support keys and values that are different sizes.
 
 - Refactor static arrays in the Catalog to a std::vector. Make LSM tree resize infinitely.
 

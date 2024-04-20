@@ -5,28 +5,31 @@ CFLAGS=-Wall -Wextra -g
 all: server client
 
 # Server
-server: server.o db_manager.o bloomfilter.o MurmurHash3.o
-	$(CC) $(CFLAGS) -o server server.o db_manager.o bloomfilter.o MurmurHash3.o
+server: server.o utils.o LSM.o bloomfilter.o MurmurHash3.o
+	$(CC) $(CFLAGS) -o server server.o utils.o LSM.o bloomfilter.o MurmurHash3.o
 
-server.o: server.cpp db_manager.hpp bloomfilter.hpp
+server.o: server.cpp Utils.hpp LSM.hpp bloomfilter.hpp 
 	$(CC) $(CFLAGS) -c server.cpp
 
-db_manager.o: db_manager.cpp db_manager.hpp bloomfilter.hpp
-	$(CC) $(CFLAGS) -c db_manager.cpp
+utils.o: utils.cpp Utils.hpp
+	$(CC) $(CFLAGS) -c utils.cpp
 
-bloomfilter.o: bloomfilter.cpp bloomfilter.hpp MurmurHash3.hpp
+LSM.o: Utils.hpp LSM.cpp LSM.hpp bloomfilter.hpp
+	$(CC) $(CFLAGS) -c LSM.cpp
+
+bloomfilter.o: Utils.hpp bloomfilter.cpp bloomfilter.hpp MurmurHash3.hpp
 	$(CC) $(CFLAGS) -c bloomfilter.cpp
 
 MurmurHash3.o: MurmurHash3.cpp MurmurHash3.hpp
 	$(CC) $(CFLAGS) -c MurmurHash3.cpp
 
 # Client
-client: client.o
-	$(CC) $(CFLAGS) -o client client.o
+client: client.o utils.o
+	$(CC) $(CFLAGS) -o client client.o utils.o
 
-client.o: client.cpp
+client.o: client.cpp Utils.hpp
 	$(CC) $(CFLAGS) -c client.cpp
 
 # Clean
 clean:
-	rm -f *.o server client
+	rm -rf *.o server client data

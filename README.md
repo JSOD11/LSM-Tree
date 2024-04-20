@@ -64,7 +64,7 @@ to execute all the commands in the `/dsl/10k.dsl` file all at once.
 
 ### Getting Started
 
-In `lsm.hpp`, change `BUFFER_SIZE` to be some small number like 3 and then execute 
+In `Types.hpp`, change `BUFFER_SIZE` to be some small number like 3 and then execute 
 some PUT and GET calls on a very small tree. Then use the `pv` command to get a sense
 of how the key-value pairs, fence pointers, and bloom filters are stored.
 
@@ -76,4 +76,4 @@ In the `generator` folder, there is a Python script called `evaluate.py` which c
 python3 evaluate.py ../dsl/10k.dsl
 ```
 
-Run the LSM tree on the same set of commands to verify that the two have the same output. The hashing solution will run much faster than the LSM Tree, but I believe this can be attributed to network delay. Within `db_manager.cpp`, there are versions of `put()` and `get()` that use the C++ standard map as the internal key-value store instead of the LSM Tree. Uncommenting these functions and commenting out the LSM versions shows that the LSM Tree seems to perform comparably to the C++ standard map.
+Run the LSM tree on the same set of commands to verify that the two have the same output. The hashing solution will run much faster than the LSM Tree, but I believe this can be attributed to network delay. Within `LSM.cpp`, there are versions of `put()` and `get()` that use the C++ standard map as the internal key-value store instead of the LSM Tree. Uncommenting these functions and commenting out the LSM versions shows that the LSM Tree seems to perform comparably to the C++ standard map.

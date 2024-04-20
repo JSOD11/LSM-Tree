@@ -2,11 +2,12 @@
 #include <functional>
 
 #include "BloomFilter.hpp"
+#include "Types.hpp"
 
 BloomFilter::BloomFilter(size_t numBits, size_t numHashFunctions)
     : bits(numBits), numHashes(numHashFunctions) {}
 
-void BloomFilter::add(int key) {
+void BloomFilter::add(KEY_TYPE key) {
     uint32_t hash[1];
     for (size_t i = 0; i < this->numHashes; ++i) {
         // i is used as the seed.
@@ -15,7 +16,7 @@ void BloomFilter::add(int key) {
     }
 }
 
-bool BloomFilter::mayContain(int key) {
+bool BloomFilter::mayContain(KEY_TYPE key) {
     uint32_t hash[1];
     for (size_t i = 0; i < this->numHashes; ++i) {
         // i is used as the seed.
