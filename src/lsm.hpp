@@ -13,14 +13,12 @@ const int PORT = 6789;
 const size_t PAGE_SIZE = sysconf(_SC_PAGESIZE) / (2 * sizeof(int));
 const size_t BUFFER_SIZE = PAGE_SIZE;
 const size_t SIZE_RATIO = 10;
-const size_t BLOOM_BITS_PER_ENTRY = 10;
 const float BLOOM_TARGET_FPR = 0.01;
 
 // Uncomment the below to create small trees for debugging.
 // const size_t PAGE_SIZE = 3;
 // const size_t BUFFER_SIZE = PAGE_SIZE;
 // const size_t SIZE_RATIO = 3;
-// const size_t BLOOM_BITS_PER_ENTRY = 5;
 // const float BLOOM_TARGET_FPR = 0.01;
 
 enum Status {

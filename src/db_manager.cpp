@@ -30,8 +30,12 @@ Level* Catalog::getLevel(size_t l) {
     return this->levels[l];
 }
 
-int* Catalog::getLevelData(size_t l) {
-    return this->getLevel(l)->data;
+int* Catalog::getLevelKeys(size_t l) {
+    return this->getLevel(l)->keys;
+}
+
+int* Catalog::getLevelVals(size_t l) {
+    return this->getLevel(l)->vals;
 }
 
 size_t Catalog::getPairsInLevel(size_t l) {
@@ -55,16 +59,16 @@ BloomFilter* Catalog::getBloomFilter(size_t l) {
     return this->getLevel(l)->bloomFilter;
 }
 
-
-void Catalog::initializeLevel(size_t l, int* levelPointer, size_t numPairs) {
-    // This function should only be called when we are creating a new level from scratch.
+// `initializeLevel()`
+// This function is used when we intend to create a new empty level at the bottom of the LSM tree.
+void Catalog::initializeLevel(size_t l, int* keysPointer, int* valsPointer, size_t numPairs) {
     assert(l == this->levels.size());
     Level* newLevel = new Level;
-    newLevel->data = levelPointer;
+    newLevel->keys = keysPointer;
+    newLevel->vals = valsPointer;
     newLevel->numPairs = numPairs;
     this->levels.push_back(newLevel);
     this->numLevels++;
-
     this->constructFence(l);
     this->constructBloomFilter(l);
 }
@@ -72,8 +76,8 @@ void Catalog::initializeLevel(size_t l, int* levelPointer, size_t numPairs) {
 // `appendPair()`
 // Appends a new KV pair at the end of the specified level.
 void Catalog::appendPair(size_t l, int key, int val) {
-    this->getLevel(l)->data[2 * this->getPairsInLevel(l)] = key;
-    this->getLevel(l)->data[2 * this->getPairsInLevel(l) + 1] = val;
+    this->getLevelKeys(l)[this->getPairsInLevel(l)] = key;
+    this->getLevelVals(l)[this->getPairsInLevel(l)] = val;
     this->getLevel(l)->numPairs++;
     this->getLevel(l)->bloomFilter->add(key);
     return;
@@ -84,17 +88,21 @@ void Catalog::appendPair(size_t l, int key, int val) {
 // and only use it when redesigning an entire level, or only modifying values,
 // as it does not update bloom filters.
 void Catalog::insertPair(size_t l, size_t pairIndex, int key, int val) {
-    this->getLevel(l)->data[2 * pairIndex] = key;
-    this->getLevel(l)->data[2 * pairIndex + 1] = val;
+    this->getLevelKeys(l)[pairIndex] = key;
+    this->getLevelVals(l)[pairIndex] = val;
     return;
 }
 
+// `getKey()`
+// Returns the key at the index specified in the level specified.
 int Catalog::getKey(size_t l, size_t entryIndex) {
-    return this->getLevel(l)->data[2 * entryIndex];
+    return this->getLevelKeys(l)[entryIndex];
 }
 
+// `getVal()`
+// Returns the value at the index specified in the level specified.
 int Catalog::getVal(size_t l, size_t entryIndex) {
-    return this->getLevel(l)->data[2 * entryIndex + 1];
+    return this->getLevelVals(l)[entryIndex];
 }
 
 // `mmapLevel()`
@@ -107,15 +115,15 @@ int* mmapLevel(const char* fileName, size_t l) {
     return reinterpret_cast<int*>(mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
 }
 
+// `parseCommand()`
+// Parses a command such as `p 1 3` or `g 7` into tokens.
 std::vector<std::string> parseCommand(std::string userCommand) {
     std::vector<std::string> tokens;
     std::istringstream stringStream(userCommand);
     std::string token;
-
     while (stringStream >> token) {
         tokens.push_back(token);
     }
-
     return tokens;
 }
 
@@ -130,15 +138,8 @@ bool isInt(const std::string& str) {
 // Constructs the fence pointer array at level l within the catalog.
 void Catalog::constructFence(size_t l) {
     if (l == 0) return;
-
-    if (!this->levelIsEmpty(l)) {
-        delete[] catalog.getLevel(l)->fence;
-    }
-
+    delete[] catalog.getLevel(l)->fence;
     this->getLevel(l)->fenceLength = std::ceil(static_cast<double>(this->getLevel(l)->numPairs) / catalog.pageSize);
-    // catalog.fenceLength[l] = std::ceil(static_cast<double>(catalog.pairsInLevel[l]) / catalog.pageSize);
-
-    // catalog.fence[l] = new int[catalog.fenceLength[l]];
     this->getLevel(l)->fence = new int[this->getLevel(l)->fenceLength];
     for (size_t i = 0, j = 0; i < this->getLevel(l)->fenceLength; i++, j += this->pageSize) {
         if (j >= this->getLevel(l)->numPairs) {
@@ -147,8 +148,6 @@ void Catalog::constructFence(size_t l) {
         }
         this->getLevel(l)->fence[i] = this->getKey(l, j);
     }
-
-    // TODO: Free fence pointers in shutdownServer().
 }
 
 // `constructBloomFilter()`
@@ -174,12 +173,10 @@ void Catalog::constructBloomFilter(size_t l) {
             this->getLevel(l)->bloomFilter->add(key);
         }
     }
-
-    // TODO: Free bloom filters in shutdownServer().
 }
 
 // `sortLevel()`
-// Sorts the level indicated. Also handles fence pointers and bloom filter.
+// Sorts the level indicated. Also handles fence pointers and the bloom filter.
 void sortLevel(size_t l) {
     if (l >= catalog.getNumLevels()) {
         std::cout << "sortLevel(): Tried to sort nonexistent level." << std::endl;
@@ -207,7 +204,6 @@ void sortLevel(size_t l) {
 // Clears the specified level by resetting the number of pairs to 0, deleting the fence, and
 // clearing the bloom filter. Does not reset all values in the level array.
 void Catalog::clearLevel(size_t l) {
-
     this->getLevel(l)->numPairs = 0;
     delete[] this->getLevel(l)->fence;
     this->getLevel(l)->fence = nullptr;
@@ -228,16 +224,11 @@ void propagateData(size_t l) {
 // `propogateLevel()`
 // Writes all the KV pairs from level l to level l + 1, then resets level l.
 void propagateLevel(size_t l) {
-
-    if (l == 9) {
-        std::cout << "LSM tree currently has a finite size, which has been reached. Shutting down." << std::endl;
-        std::abort();
-    }
-
     if (l == catalog.getNumLevels() - 1) {
-        // We need to create the next level, then copy everything into it.
-        int* levelPointer = mmapLevel(("data/l" + std::to_string(l + 1) + ".data").c_str(), l + 1);
-        catalog.initializeLevel(l + 1, levelPointer, 0);
+        // We need to initialize a new level at the bottom of the tree then copy everything into it.
+        int* keysPointer = mmapLevel(("data/k" + std::to_string(l + 1) + ".data").c_str(), l + 1);
+        int* valsPointer = mmapLevel(("data/v" + std::to_string(l + 1) + ".data").c_str(), l + 1);
+        catalog.initializeLevel(l + 1, keysPointer, valsPointer, 0);
         propagateData(l);
     } else {
         // Level l + 1 already exists, so we can just write to it.
@@ -254,7 +245,6 @@ int searchFence(size_t level, int key) {
     // Binary search through the fence pointers to get the target page.
     int l = 0, r = catalog.getFenceLength(level) - 1;
     while (l <= r) {
-
         // The target page is the final page.
         if (l == (int)catalog.getFenceLength(level)- 1) break;
 
@@ -267,7 +257,6 @@ int searchFence(size_t level, int key) {
             r = m - 1;
         }
     }
-
     return r;
 }
 
@@ -350,8 +339,8 @@ std::string vectorToString(const std::vector<int>& vec) {
     return ss.str();
 }
 
-// Uncomment the two functions below and comment out the LSM tree versions in order
-// to observe how the system performs when the underlying implementation is a map.
+// Uncomment the functions below and comment out the LSM tree versions
+// to see how the system performs when the underlying implementation is a map.
 
 // `put()`
 // This version of put uses a map. Used for debugging and development.

@@ -15,30 +15,36 @@
 #include "lsm.hpp"
 #include "db_manager.hpp"
 
+// `populateCatalog()`
+// Populates the catalog with persisted data or creates a data folder if one does not exist.
 void populateCatalog(void) {
     // Create the data folder if it does not exist.
     if (!std::filesystem::exists("data")) std::filesystem::create_directory("data");
 
     if (!std::filesystem::exists("data/catalog.data")) {
         // The database is being started from scratch. We start just with l0.
-        int* levelPointer = mmapLevel("data/l0.data", 0);
-        catalog.initializeLevel(0, levelPointer, 0);
+        int* keysPointer = mmapLevel("data/k0.data", 0);
+        int* valsPointer = mmapLevel("data/v0.data", 0);
+        catalog.initializeLevel(0, keysPointer, valsPointer, 0);
         std::cout << "Started new database from scratch.\n" << std::endl;
     } else {
         // We are populating the catalog with persisted data.
         std::ifstream catalogFile("data/catalog.data");
         size_t numPairs = 0, l = 0;
         while (catalogFile >> numPairs) {
-            int* levelPointer = mmapLevel(("data/l" + std::to_string(l) + ".data").c_str(), l);
-            catalog.initializeLevel(l, levelPointer, numPairs);
+            int* keysPointer = mmapLevel(("data/k" + std::to_string(l) + ".data").c_str(), l);
+            int* valsPointer = mmapLevel(("data/v" + std::to_string(l) + ".data").c_str(), l);
+            catalog.initializeLevel(l, keysPointer, valsPointer, numPairs);
             l++;
         }
         std::cout << "Loaded persisted data.\n" << std::endl;
     }
 }
 
+// `shutdownServer()`
+// Shuts down the server upon receiving an `s` or `sw` command from the client, munmaps files, 
+// and frees levels. `s` persists the data in the data folder and `sw` wipes the data folder.
 void shutdownServer(std::string userCommand) {
-
     if (userCommand == "sw") {
         std::filesystem::remove_all("data");
         std::cout << "Wiped data folder." << std::endl;
@@ -52,8 +58,10 @@ void shutdownServer(std::string userCommand) {
         std::cout << "Persisted data folder." << std::endl;
     }
 
-    for (size_t i = 0; i < catalog.getNumLevels(); i++) {
-        munmap(catalog.getLevel(i), 2 * catalog.getPairsInLevel(i) * sizeof(int));
+    for (size_t l = 0; l < catalog.getNumLevels(); l++) {
+        munmap(catalog.getLevel(l)->keys, catalog.getPairsInLevel(l) * sizeof(int));
+        munmap(catalog.getLevel(l)->vals, catalog.getPairsInLevel(l) * sizeof(int));
+        delete catalog.getLevel(l);
     }
 }
 
@@ -76,7 +84,6 @@ int main() {
     std::cout << "\nStarting up server...\n" << std::endl;
     std::cout << "Buffer size: " << BUFFER_SIZE << std::endl;
     std::cout << "Size ratio: " << SIZE_RATIO << std::endl;
-    std::cout << "Bloom bits per entry: " << BLOOM_BITS_PER_ENTRY << std::endl;
     std::cout << "Bloom target FPR: " << BLOOM_TARGET_FPR << "\n" << std::endl;
 
     populateCatalog();
@@ -117,7 +124,6 @@ int main() {
 
         userCommand = std::string(buf, buf + bytesReceived);
         
-        // Log the message.
         // std::cout << "Client command: " << userCommand << std::endl;
 
         // Process the message and send a reply to the client.

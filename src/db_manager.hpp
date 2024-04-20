@@ -7,11 +7,17 @@
 #include "lsm.hpp"
 
 struct Level {
-    int* data = nullptr;
+    int* keys = nullptr;
+    int* vals = nullptr;
     size_t numPairs = 0;
     int* fence = nullptr;
     size_t fenceLength = 0;
     BloomFilter* bloomFilter = nullptr;
+
+    ~Level() {
+        delete[] fence;
+        delete bloomFilter;
+    }
 };
 
 class Catalog {
@@ -28,14 +34,15 @@ class Catalog {
         size_t getNumLevels();
         size_t getSizeRatio();
         Level* getLevel(size_t l);
-        int* getLevelData(size_t l);
+        int* getLevelKeys(size_t l);
+        int* getLevelVals(size_t l);
         size_t getPairsInLevel(size_t l);
         bool levelIsEmpty(size_t level);
         int getFenceKey(size_t l, size_t index);
         size_t getFenceLength(size_t l);
         BloomFilter* getBloomFilter(size_t l);
 
-        void initializeLevel(size_t l, int* levelPointer, size_t numPairs);
+        void initializeLevel(size_t l, int* keysPointer, int* valsPointer, size_t numPairs);
         void appendPair(size_t level, int key, int val);
         void insertPair(size_t level, size_t pairIndex, int key, int val);
         int getKey(size_t level, size_t entryIndex);
