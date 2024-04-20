@@ -5,31 +5,98 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <cmath>
+#include <cassert>
 
 #include "lsm.hpp"
+#include "db_manager.hpp"
 
 std::map<int, int> map;
-Catalog catalog = {
-    .bufferSize = BUFFER_SIZE,
-    .numLevels = 0,
-    .sizeRatio = SIZE_RATIO,
-    .levels = {nullptr},
-    .pairsInLevel = {0},
-    .fence = {nullptr},
-    .fenceLength = {0},
-    .bloomfilters = {nullptr},
-};
+Catalog catalog;
+Stats stats;
 
-Stats stats = {
-    .puts = 0,
-    .successfulGets = 0,
-    .failedGets = 0,
-    .ranges = 0,
-    .rangeLengthSum = 0,
-    .searchLevelCalls = 0,
-    .bloomTruePositives = 0,
-    .bloomFalsePositives = 0,
-};
+size_t Catalog::getBufferSize() {
+    return this->bufferSize;
+}
+
+size_t Catalog::getNumLevels() {
+    return this->numLevels;
+}
+
+size_t Catalog::getSizeRatio() {
+    return this->sizeRatio;
+}
+
+int* Catalog::getLevel(size_t l) {
+    return this->levels[l];
+}
+
+size_t Catalog::getPairsInLevel(size_t l) {
+    return this->pairsInLevel[l];
+}
+
+bool Catalog::levelIsEmpty(size_t l) {
+    return this->getPairsInLevel(l) == 0;
+}
+
+int Catalog::getFenceKey(size_t l, size_t index) {
+    assert(this->fence[l] != nullptr);
+    return this->fence[l][index];
+}
+
+size_t Catalog::getFenceLength(size_t l) {
+    return this->fenceLength[l];
+}
+
+BloomFilter* Catalog::getBloomFilter(size_t l) {
+    return this->bloomfilters[l];
+}
+
+void Catalog::initializeLevel(size_t l, int* levelPointer, size_t numPairs) {
+    this->levels[l] = levelPointer;
+    this->pairsInLevel[l] = numPairs;
+    this->numLevels++;
+
+    this->constructFence(l);
+    this->constructBloomFilter(l);
+}
+
+// `appendPair()`
+// Appends a new KV pair at the end of the specified level.
+void Catalog::appendPair(size_t level, int key, int val) {
+    this->levels[level][2 * this->getPairsInLevel(level)] = key;
+    this->levels[level][2 * this->getPairsInLevel(level) + 1] = val;
+    this->pairsInLevel[level]++;
+    this->bloomfilters[level]->add(key);
+    return;
+}
+
+// `insertPair()`
+// Inserts a KV pair at the specified index within a level. Be careful with this
+// and only use it when redesigning an entire level, or only modifying values,
+// as it does not update bloom filters.
+void Catalog::insertPair(size_t level, size_t pairIndex, int key, int val) {
+    this->levels[level][2 * pairIndex] = key;
+    this->levels[level][2 * pairIndex + 1] = val;
+    return;
+}
+
+int Catalog::getKey(size_t level, size_t entryIndex) {
+    return this->levels[level][2 * entryIndex];
+}
+
+int Catalog::getVal(size_t level, size_t entryIndex) {
+    return this->levels[level][2 * entryIndex + 1];
+}
+
+// `mmapLevel()`
+// Takes in the name of a file for a level and the level number. Returns an int* pointing to the
+// start of the level array.
+int* mmapLevel(const char* fileName, size_t level) {
+    int fd = open(fileName, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+    size_t fileSize = 2 * catalog.getBufferSize() * sizeof(int) * std::pow(catalog.getSizeRatio(), level);
+    ftruncate(fd, fileSize);
+    return reinterpret_cast<int*>(mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
+}
 
 std::vector<std::string> parseCommand(std::string userCommand) {
     std::vector<std::string> tokens;
@@ -52,22 +119,22 @@ bool isInt(const std::string& str) {
 
 // `constructFence()`
 // Constructs the fence pointer array at level l within the catalog.
-void constructFence(size_t l) {
+void Catalog::constructFence(size_t l) {
     if (l == 0) return;
 
-    if (catalog.fence[l] != nullptr) {
+    if (!this->levelIsEmpty(l)) {
         delete[] catalog.fence[l];
     }
 
-    catalog.fenceLength[l] = std::ceil(static_cast<double>(catalog.pairsInLevel[l] / catalog.bufferSize));
+    catalog.fenceLength[l] = std::ceil(static_cast<double>(catalog.pairsInLevel[l]) / catalog.pageSize);
 
     catalog.fence[l] = new int[catalog.fenceLength[l]];
-    for (size_t i = 0, j = 0; i < catalog.fenceLength[l]; i++, j += catalog.bufferSize) {
-        if (j >= 2 * catalog.pairsInLevel[l]) {
+    for (size_t i = 0, j = 0; i < catalog.fenceLength[l]; i++, j += catalog.pageSize) {
+        if (j >= catalog.pairsInLevel[l]) {
             std::cout << "constructFence(): Out of bounds access error." << std::endl;
             return;
         }
-        catalog.fence[l][i] = catalog.levels[l][2 * j];
+        catalog.fence[l][i] = catalog.getKey(l, j);
     }
 
     // TODO: Free fence pointers in shutdownServer().
@@ -76,7 +143,7 @@ void constructFence(size_t l) {
 // `constructBloomFilter()`
 // Constructs a bloom filter boolean vector over the keys for the specified level based on the current state of the level. 
 // Called at the end of `propagateLevel()` and in `populateCatalog()`.
-void constructBloomFilter(size_t level) {
+void Catalog::constructBloomFilter(size_t level) {
     size_t levelSize = catalog.bufferSize * std::pow(catalog.sizeRatio, level);
     size_t numBits = static_cast<size_t>(-(levelSize * std::log(BLOOM_TARGET_FPR)) / std::pow(std::log(2), 2));
     
@@ -100,80 +167,73 @@ void constructBloomFilter(size_t level) {
 }
 
 // `sortLevel()`
-// Sorts the level indicated.
+// Sorts the level indicated. Also handles fence pointers and bloom filter.
 void sortLevel(size_t l) {
-    if (l >= catalog.numLevels) {
+    if (l >= catalog.getNumLevels()) {
         std::cout << "sortLevel(): Tried to sort nonexistent level." << std::endl;
         return;
     }
 
     std::vector<std::pair<int, int>> levelVector;
-    for (size_t i = 0; i < catalog.pairsInLevel[l]; i++) {
-        levelVector.push_back({catalog.levels[l][2 * i], catalog.levels[l][2 * i + 1]});
+    for (size_t i = 0; i < catalog.getPairsInLevel(l); i++) {
+        levelVector.push_back({catalog.getKey(l, i), catalog.getVal(l, i)});
     }
 
     std::sort(levelVector.begin(), levelVector.end(), [](const std::pair<int, int>& x, const std::pair<int, int>& y) {
         return x.first < y.first;
     });
 
-    for (size_t i = 0; i < catalog.pairsInLevel[l]; i++) {
-        catalog.levels[l][2 * i] = levelVector[i].first;
-        catalog.levels[l][2 * i + 1] = levelVector[i].second;
+    for (size_t i = 0; i < catalog.getPairsInLevel(l); i++) {
+        catalog.insertPair(l, i, levelVector[i].first, levelVector[i].second);
     }
 
-    constructFence(l);
+    catalog.constructFence(l);
+    catalog.constructBloomFilter(l + 1);
+}
+
+// `clearLevel()`
+// Clears the specified level by resetting the number of pairs to 0, deleting the fence, and
+// clearing the bloom filter. Does not reset all values in the level array.
+void Catalog::clearLevel(size_t l) {
+    this->pairsInLevel[l] = 0;
+    if (l > 0 && catalog.fence[l] != nullptr) {
+        delete[] catalog.fence[l];
+        catalog.fence[l] = nullptr;
+        catalog.fenceLength[l] = 0;
+    }
+    catalog.bloomfilters[l]->clear();
+}
+
+// `propagateData()`
+// Moves all of the data at level l to level l + 1, then wipes level l.
+void propagateData(size_t l) {
+    for (size_t i = 0; i < catalog.getPairsInLevel(l); i++) {
+        catalog.appendPair(l + 1, catalog.getKey(l, i), catalog.getVal(l, i));
+    }
+    catalog.clearLevel(l);
+    sortLevel(l + 1);
 }
 
 // `propogateLevel()`
 // Writes all the KV pairs from level l to level l + 1, then resets level l.
-void propogateLevel(size_t l) {
+void propagateLevel(size_t l) {
 
     if (l == 9) {
         std::cout << "LSM tree currently has a finite size, which has been reached. Shutting down." << std::endl;
         std::abort();
     }
 
-    if (l == catalog.numLevels - 1) {
+    if (l == catalog.getNumLevels() - 1) {
         // We need to create the next level, then copy everything into it.
-        std::string dataFileName = "data/l" + std::to_string(l + 1) + ".data";
-        int fd = open(dataFileName.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-        size_t fileSize = 2 * catalog.bufferSize * std::pow(catalog.sizeRatio, l + 1) * sizeof(int);
-        ftruncate(fd, fileSize);
-        void* levelPointer = mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-        catalog.levels[l + 1] = reinterpret_cast<int*>(levelPointer);
-
-        std::memcpy(catalog.levels[l + 1], catalog.levels[l], 2 * catalog.pairsInLevel[l] * sizeof(int));
-
-        catalog.pairsInLevel[l + 1] = catalog.pairsInLevel[l];
-        catalog.pairsInLevel[l] = 0;
-
-        catalog.numLevels++;
-
-        sortLevel(l + 1);
+        int* levelPointer = mmapLevel(("data/l" + std::to_string(l + 1) + ".data").c_str(), l + 1);
+        catalog.initializeLevel(l + 1, levelPointer, 0);
+        propagateData(l);
     } else {
         // Level l + 1 already exists, so we can just write to it.
-        for (size_t i = 0; i < catalog.pairsInLevel[l]; i++) {
-            catalog.levels[l + 1][2 * (catalog.pairsInLevel[l + 1] + i)] = catalog.levels[l][2 * i];
-            catalog.levels[l + 1][2 * (catalog.pairsInLevel[l + 1] + i) + 1] = catalog.levels[l][2 * i + 1];
-        }
-        catalog.pairsInLevel[l + 1] += catalog.pairsInLevel[l];
-
-        size_t sizeL = catalog.pairsInLevel[l];
-        catalog.pairsInLevel[l] = 0;
-
-        sortLevel(l + 1);
-
-        if (catalog.pairsInLevel[l + 1] == sizeL * catalog.sizeRatio) propogateLevel(l + 1);
+        propagateData(l);
+        if (catalog.getPairsInLevel(l + 1) == catalog.getBufferSize() * std::pow(catalog.getSizeRatio(), l + 1)) propagateLevel(l + 1);
     }
-
-    if (l > 0 && catalog.fence[l] != nullptr) {
-        delete[] catalog.fence[l];
-        catalog.fence[l] = nullptr;
-        catalog.fenceLength[l] = 0;
-    }
-
-    catalog.bloomfilters[l]->clear();
-    constructBloomFilter(l + 1);
+    catalog.clearLevel(l);
 }
 
 // `searchFence()`
@@ -181,16 +241,16 @@ void propogateLevel(size_t l) {
 // Returns the page on which the key will be found if it exists.
 int searchFence(size_t level, int key) {
     // Binary search through the fence pointers to get the target page.
-    int l = 0, r = catalog.fenceLength[level] - 1;
+    int l = 0, r = catalog.getFenceLength(level) - 1;
     while (l <= r) {
 
         // The target page is the final page.
-        if (l == (int)catalog.fenceLength[level] - 1) break;
+        if (l == (int)catalog.getFenceLength(level)- 1) break;
 
         int m = (l + r) / 2;
-        if (catalog.fence[level][m] <= key && key < catalog.fence[level][m + 1]) {
+        if (catalog.getFenceKey(level, m) <= key && key < catalog.getFenceKey(level, m + 1)) {
             return m;
-        } else if (catalog.fence[level][m] < key) {
+        } else if (catalog.getFenceKey(level, m) < key) {
             l = m + 1;
         } else {
             r = m - 1;
@@ -201,13 +261,12 @@ int searchFence(size_t level, int key) {
 }
 
 bool searchBloomFilter(size_t level, int key) {
-    return catalog.bloomfilters[level]->mayContain(key);
+    return catalog.getBloomFilter(level)->mayContain(key);
 }
 
 // `searchLevel()`
 // Searches for a key within level l of the LSM tree. Returns the index i
-// of the key if it exists within the level, or -1 otherwise. To extract the
-// value associated with the key, use `catalog.levels[l][2 * i + 1]`.
+// of the key if it exists within the level, or -1 otherwise.
 //
 // `searchLevel()` contains a switch that allows it to be used for range queries.
 // For a range query, in the case that the target key does not exist, we return the 
@@ -217,50 +276,49 @@ bool searchBloomFilter(size_t level, int key) {
 int searchLevel(size_t level, int key, bool range) {
 
     if (!range) stats.searchLevelCalls++;
-    if (!range && !searchBloomFilter(level, key)) return -1;
-
-    if (range) {
-        // Key is outside the range of values in the level. Return 0 or len(level) - 1.
-        if (key < catalog.levels[level][0]) return 0;
-        if (key > catalog.levels[level][2 * (catalog.pairsInLevel[level] - 1)]) return catalog.pairsInLevel[level];
+    if (!range) {
+        if (catalog.levelIsEmpty(level) || !searchBloomFilter(level, key)) return -1;
+    } else {
+        // Bound is outside the range of keys in the level. Return 0 or len(level) - 1.
+        if (catalog.levelIsEmpty(level) || key < catalog.getKey(level, 0)) return 0;
+        if (key > catalog.getKey(level, catalog.getPairsInLevel(level) - 1)) return catalog.getPairsInLevel(level);
     }
 
     // The buffer, l0, is not sorted by key. All layers beneath l0 are sorted by key.
 
     if (level == 0) {
-        for (size_t i = 0; i < catalog.pairsInLevel[level]; i++) {
-            if (catalog.levels[level][2 * i] == key) {
+        for (size_t i = 0; i < catalog.getPairsInLevel(level); i++) {
+            if (catalog.getKey(level, i) == key) {
                 stats.bloomTruePositives++;
                 return i;
             }
         }
-    } else if (catalog.fence[level] != nullptr) {
-        // If catalog.fence[level] exists, the level is non-empty.
+    } else if (catalog.levelIsEmpty(level)) {
+        // If the level is empty and we're doing a range query, we just return 0 for both
+        // the leftBound index and rightBound index.
+        if (range) return 0;
+    } else {
         int pageIndex = searchFence(level, key);
         if (pageIndex != -1) {
             // Binary search within the page.
-            int l = pageIndex * catalog.bufferSize;
-            int r = std::min((pageIndex + 1) * catalog.bufferSize, catalog.pairsInLevel[level] - 1);
+            int l = pageIndex * catalog.getBufferSize();
+            int r = std::min((pageIndex + 1) * catalog.getBufferSize(), catalog.getPairsInLevel(level) - 1);
             while (l <= r) {
                 int m = (l + r) / 2;
-                if (catalog.levels[level][2 * m] == key) {
+                if (catalog.getKey(level, m) == key) {
                     stats.bloomTruePositives++;
                     return m;
-                } else if (catalog.levels[level][2 * m] < key) {
+                } else if (catalog.getKey(level, m) < key) {
                     l = m + 1;
                 } else {
                     r = m - 1;
                 }
             }
             if (range) {
-                if (l > (int)catalog.pairsInLevel[level]) l = catalog.pairsInLevel[level];
+                if (l > (int)catalog.getPairsInLevel(level)) l = catalog.getPairsInLevel(level);
                 return l;
             }
         }
-    } else {
-        // If the level is empty and we're doing a range query, we just return 0 for both
-        // the leftBound index and rightBound index.
-        if (range) return 0;
     }
 
     stats.bloomFalsePositives++;
@@ -333,22 +391,16 @@ std::tuple<Status, std::string> put(Status status, int key, int val) {
     stats.puts++;
 
     // Search through each level of the LSM tree. If the key already exists, update it.
-    for (size_t l = 0; l < catalog.numLevels; l++) {
+    for (size_t l = 0; l < catalog.getNumLevels(); l++) {
         int i = searchLevel(l, key, false);
         if (i >= 0) {
-            catalog.levels[l][2 * i + 1] = val;
+            catalog.insertPair(l, i, key, val);
             return std::make_tuple(status, "");
         }
     }
 
-    catalog.levels[0][2 * catalog.pairsInLevel[0]] = key;
-    catalog.levels[0][2 * catalog.pairsInLevel[0] + 1] = val;
-    catalog.pairsInLevel[0]++;
-    catalog.bloomfilters[0]->add(key);
-
-    if (catalog.pairsInLevel[0] == catalog.bufferSize) {
-        propogateLevel(0);
-    }
+    catalog.appendPair(0, key, val);
+    if (catalog.getPairsInLevel(0) == catalog.getBufferSize()) propagateLevel(0);
 
     return std::make_tuple(status, "");
 }
@@ -358,16 +410,14 @@ std::tuple<Status, std::string> put(Status status, int key, int val) {
 std::tuple<Status, std::string> get(Status status, int key) {
 
     // Search through each level of the LSM tree.
-    for (size_t l = 0; l < catalog.numLevels; l++) {
+    for (size_t l = 0; l < catalog.getNumLevels(); l++) {
         int i = searchLevel(l, key, false);
         if (i >= 0) {
-            // std::cout << "Level " << l << ": " << key << " maps to " << catalog.levels[l][2 * i + 1] << std::endl;
             stats.successfulGets++;
-            return std::make_tuple(status, std::to_string(catalog.levels[l][2 * i + 1]));
+            return std::make_tuple(status, std::to_string(catalog.getVal(l, i)));
         }
     }
 
-    // std::cout << key << " is not a member of the LSM tree." << std::endl;
     stats.failedGets++;
     return std::make_tuple(status, "");
 }
@@ -381,18 +431,18 @@ std::tuple<Status, std::string> range(Status status, int leftBound, int rightBou
     std::vector<int> results;
 
     // A range query must search through every level of the LSM tree.
-    for (size_t l = 0; l < catalog.numLevels; l++) {
+    for (size_t l = 0; l < catalog.getNumLevels(); l++) {
         if (l == 0) {
-            for (size_t i = 0; i < catalog.pairsInLevel[0]; i++) {
-                if ((leftBound <= catalog.levels[l][2 * i]) && (catalog.levels[l][2 * i] < rightBound)) {
-                    results.push_back(catalog.levels[l][2 * i + 1]);
+            for (size_t i = 0; i < catalog.getPairsInLevel(0); i++) {
+                if ((leftBound <= catalog.getKey(l, i)) && (catalog.getKey(l, i) < rightBound)) {
+                    results.push_back(catalog.getVal(l, i));
                 }
             }
         } else {
             size_t startIndex = searchLevel(l, leftBound, true);
             size_t endIndex = searchLevel(l, rightBound, true);
             for (size_t i = startIndex; i < endIndex; i++) {
-                results.push_back(catalog.levels[l][2 * i + 1]);
+                results.push_back(catalog.getVal(l, i));
             }
         }
     }
@@ -408,33 +458,31 @@ void printLevels(std::string userCommand) {
     std::cout << "——————— Printing levels. ——————— " << std::endl;
     std::cout << "———————————————————————————————— \n" << std::endl;
 
-    for (size_t l = 0; l < catalog.numLevels; l++) {
-        int* level = catalog.levels[l];
-
+    for (size_t l = 0; l < catalog.getNumLevels(); l++) {
         if (l == 0) std::cout << "\n ——————— Buffer ——————— " << std::endl;
         else std::cout << "\n ——————— Level " << l << " ——————— " << std::endl;
 
-        std::cout << "Contains: " << catalog.pairsInLevel[l] << " KV pairs = " << 2 * catalog.pairsInLevel[l] * sizeof(int) << " bytes." << std::endl;
-        std::cout << "Capacity: " << catalog.bufferSize * std::pow(catalog.sizeRatio, l) << " KV pairs = " << 2 * catalog.bufferSize * std::pow(catalog.sizeRatio, l) * sizeof(int)  << " bytes." << std::endl;
+        std::cout << "Contains: " << catalog.getPairsInLevel(l) << " KV pairs = " << 2 * catalog.getPairsInLevel(l) * sizeof(int) << " bytes." << std::endl;
+        std::cout << "Capacity: " << catalog.getBufferSize() * std::pow(catalog.getSizeRatio(), l) << " KV pairs = " << 2 * catalog.getBufferSize() * std::pow(catalog.getSizeRatio(), l) * sizeof(int)  << " bytes." << std::endl;
 
         if (userCommand == "pv") {
             // Verbose printing.
             if (l == 0) {
                 std::cout << "Buffer is unsorted. No fence pointers." << std::endl;
-            } else if (catalog.fence[l] != nullptr) {
+            } else if (!catalog.levelIsEmpty(l)) {
                 std::cout << "Fence: [";
-                for (int i = 0; i < (int)catalog.fenceLength[l] - 1; i++) {
-                    std::cout << catalog.fence[l][i] << ", ";
+                for (int i = 0; i < (int)catalog.getFenceLength(l) - 1; i++) {
+                    std::cout << catalog.getFenceKey(l, i) << ", ";
                 }
-                std::cout << catalog.fence[l][catalog.fenceLength[l] - 1] << "]" << std::endl;
+                std::cout << catalog.getFenceKey(l, catalog.getFenceLength(l) - 1) << "]" << std::endl;
             }
             std::cout << "Bloom: [";
-            for (int i = 0; i < (int)catalog.bloomfilters[l]->numBits() - 1; i++) {
-                std::cout << catalog.bloomfilters[l]->getBit(i) << ", ";
+            for (int i = 0; i < (int)catalog.getBloomFilter(l)->numBits() - 1; i++) {
+                std::cout << catalog.getBloomFilter(l)->getBit(i) << ", ";
             }
-            std::cout << catalog.bloomfilters[l]->getBit(catalog.bloomfilters[l]->numBits() - 1) << "]" << std::endl;
-            for (size_t i = 0; i < catalog.pairsInLevel[l]; i++) {
-                std::cout << level[2 * i] << " -> " << level[2 * i + 1] << std::endl;
+            std::cout << catalog.getBloomFilter(l)->getBit(catalog.getBloomFilter(l)->numBits() - 1) << "]" << std::endl;
+            for (size_t i = 0; i < catalog.getPairsInLevel(l); i++) {
+                std::cout << catalog.getKey(l, i) << " -> " << catalog.getVal(l, i) << std::endl;
             }
         }
     }

@@ -21,35 +21,19 @@ void populateCatalog(void) {
 
     if (!std::filesystem::exists("data/catalog.data")) {
         // The database is being started from scratch. We start just with l0.
-        int fd = open("data/l0.data", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-        size_t fileSize = 2 * catalog.bufferSize * sizeof(int);
-        ftruncate(fd, fileSize);
-        void* levelPointer = mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-        catalog.levels[0] = reinterpret_cast<int*>(levelPointer);
-        constructBloomFilter(0);
-
-        catalog.numLevels++;
+        int* levelPointer = mmapLevel("data/l0.data", 0);
+        catalog.initializeLevel(0, levelPointer, 0);
+        std::cout << "Started new database from scratch.\n" << std::endl;
     } else {
         // We are populating the catalog with persisted data.
         std::ifstream catalogFile("data/catalog.data");
         size_t numPairs = 0, l = 0;
         while (catalogFile >> numPairs) {
-            std::string dataFileName = "data/l" + std::to_string(l) + ".data";
-            int fd = open(dataFileName.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-            size_t fileSize = 2 * catalog.bufferSize * sizeof(int);
-            if (l > 0) {
-                fileSize *= std::pow(catalog.sizeRatio, l);
-            }
-            ftruncate(fd, fileSize);
-            void* levelPointer = mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-            catalog.levels[l] = reinterpret_cast<int*>(levelPointer);
-            catalog.pairsInLevel[l] = numPairs;
-            constructFence(l);
-            constructBloomFilter(l);
-
-            catalog.numLevels++;
+            int* levelPointer = mmapLevel(("data/l" + std::to_string(l) + ".data").c_str(), l);
+            catalog.initializeLevel(l, levelPointer, numPairs);
             l++;
         }
+        std::cout << "Loaded persisted data.\n" << std::endl;
     }
 }
 
@@ -61,15 +45,15 @@ void shutdownServer(std::string userCommand) {
     } else {
         // Write the number of pairs per level into the catalog file.
         std::ofstream catalogFile("data/catalog.data", std::ios::out);
-        for (size_t i = 0; i < catalog.numLevels; i++) {
-            catalogFile << catalog.pairsInLevel[i] << std::endl;
+        for (size_t i = 0; i < catalog.getNumLevels(); i++) {
+            catalogFile << catalog.getPairsInLevel(i) << std::endl;
         }
         catalogFile.close();
         std::cout << "Persisted data folder." << std::endl;
     }
 
-    for (size_t i = 0; i < catalog.numLevels; i++) {
-        munmap(catalog.levels[i], 2 * catalog.pairsInLevel[i] * sizeof(int));
+    for (size_t i = 0; i < catalog.getNumLevels(); i++) {
+        munmap(catalog.getLevel(i), 2 * catalog.getPairsInLevel(i) * sizeof(int));
     }
 }
 
