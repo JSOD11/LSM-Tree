@@ -44,6 +44,7 @@ struct Stats {
     size_t searchLevelCalls = 0;
     size_t bloomTruePositives = 0;
     size_t bloomFalsePositives = 0;
+    size_t deletes = 0;
 };
 
 extern std::map<KEY_TYPE, VAL_TYPE> map;

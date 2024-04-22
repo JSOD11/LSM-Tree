@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "MurmurHash3.hpp"
+#include "Types.hpp"
 
 class BloomFilter {
     private:
@@ -12,8 +13,8 @@ class BloomFilter {
 
     public:
         BloomFilter(size_t numBits, size_t numHashFunctions);
-        void add(int key);
-        bool mayContain(int key);
+        void add(KEY_TYPE key);
+        bool mayContain(KEY_TYPE key);
         void clear();
         size_t numBits();
         size_t getBit(size_t index);

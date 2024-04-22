@@ -58,11 +58,11 @@ Stats stats;
 
 // `put()`
 // Put a key and value into the LSM tree. If the key already exists, update the value.
-std::tuple<Status, std::string> put(Status status, KEY_TYPE key, VAL_TYPE val) {
-
-    stats.puts++;
-
-    lsm.appendPair(0, key, val);
+// This function is also used for deletes by setting `isDelete = true`.
+std::tuple<Status, std::string> put(Status status, KEY_TYPE key, VAL_TYPE val, bool isDelete) {
+    if (!isDelete) stats.puts++;
+    else stats.deletes++;
+    lsm.appendPair(0, key, val, isDelete);
     return std::make_tuple(status, "");
 }
 
@@ -74,6 +74,7 @@ std::tuple<Status, std::string> get(Status status, KEY_TYPE key) {
     for (size_t l = 0; l < lsm.getNumLevels(); l++) {
         int i = lsm.searchLevel(l, key, false);
         if (i >= 0) {
+            if (lsm.getTomb(l, i)) break;
             stats.successfulGets++;
             return std::make_tuple(status, std::to_string(lsm.getVal(l, i)));
         }
@@ -98,6 +99,7 @@ std::tuple<Status, std::string> range(Status status, KEY_TYPE leftBound, KEY_TYP
             for (size_t i = 0; i < lsm.getPairsInLevel(0); i++) {
                 if ((leftBound <= lsm.getKey(l, i)) && (lsm.getKey(l, i) < rightBound)) {
                     results[lsm.getKey(l, i)] = lsm.getVal(l, i);
+                    if (lsm.getTomb(l, i)) results.erase(lsm.getKey(l, i));
                 }
             }
         } else {
@@ -105,6 +107,7 @@ std::tuple<Status, std::string> range(Status status, KEY_TYPE leftBound, KEY_TYP
             int endIndex = lsm.searchLevel(l, rightBound, true);
             for (int i = startIndex; i < endIndex; i++) {
                 results[lsm.getKey(l, i)] = lsm.getVal(l, i);
+                if (lsm.getTomb(l, i)) results.erase(lsm.getKey(l, i));
             }
         }
     }
@@ -144,7 +147,7 @@ void printLevels(std::string userCommand) {
             }
             std::cout << lsm.getBloomFilter(l)->getBit(lsm.getBloomFilter(l)->numBits() - 1) << "]" << std::endl;
             for (size_t i = 0; i < lsm.getPairsInLevel(l); i++) {
-                std::cout << lsm.getKey(l, i) << " -> " << lsm.getVal(l, i) << std::endl;
+                std::cout << lsm.getKey(l, i) << " -> " << lsm.getVal(l, i) << "  " << lsm.getTomb(l, i) << std::endl;
             }
         }
     }
@@ -170,13 +173,16 @@ std::tuple<Status, std::string> processCommand(std::string userCommand) {
     // Check that the input command is valid, and proceed with routing if so.
     if (tokens[0] == "p" && tokens.size() == 3 && isNum(tokens[1]) && isNum(tokens[2])) {
         // std::cout << "Received put command.\n" <<  std::endl;
-        return put(status, std::stoi(tokens[1]), std::stoi(tokens[2]));
+        return put(status, std::stoi(tokens[1]), std::stoi(tokens[2]), false);
     } else if (tokens[0] == "g" && tokens.size() == 2 && isNum(tokens[1])) {
         // std::cout << "Received  get command.\n" << std::endl;
         return get(status, std::stoi(tokens[1]));
     } else if (tokens[0] == "r" && tokens.size() == 3 && isNum(tokens[1]) && isNum(tokens[2])) {
         // std::cout << "Received range query command.\n" <<  std::endl;
         return range(status, std::stoi(tokens[1]), std::stoi(tokens[2]));
+    } else if (tokens[0] == "d" && tokens.size() == 2 && isNum(tokens[1])) {
+        // std::cout << "Received delete command.\n" <<  std::endl;
+        return put(status, std::stoi(tokens[1]), 0, true);
     } else {
         return std::make_tuple(status,
                 "Supported commands: \n\n\

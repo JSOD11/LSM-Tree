@@ -2,10 +2,6 @@
 
 ## Main Projects
 
-- Out of place updates.
-
-- Deletes.
-
 - Add DICT.
 
 - Add RLE.
@@ -27,6 +23,10 @@
 
 
 ## Complete
+
+- Out of place updates.
+
+- Deletes.
 
 - Restructure the design of levels to support keys and values that are different sizes.
 

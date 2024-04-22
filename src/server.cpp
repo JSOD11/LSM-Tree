@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <fstream>
 #include <cmath>
+#include <iomanip>
 
 #include "Types.hpp"
 #include "Utils.hpp"
@@ -26,7 +27,8 @@ void populateCatalog(void) {
         // The database is being started from scratch. We start just with l0.
         KEY_TYPE* keysPointer = mmapLevel<KEY_TYPE>("data/k0.data", 0);
         VAL_TYPE* valsPointer = mmapLevel<VAL_TYPE>("data/v0.data", 0);
-        lsm.initializeLevel(0, keysPointer, valsPointer, 0);
+        bool* tombstonePointer = mmapLevel<bool>("data/t0.data", 0);
+        lsm.initializeLevel(0, keysPointer, valsPointer, tombstonePointer, 0);
         std::cout << "Started new database from scratch.\n" << std::endl;
     } else {
         // We are populating the catalog with persisted data.
@@ -35,7 +37,8 @@ void populateCatalog(void) {
         while (catalogFile >> numPairs) {
             KEY_TYPE* keysPointer = mmapLevel<KEY_TYPE>(("data/k" + std::to_string(l) + ".data").c_str(), l);
             VAL_TYPE* valsPointer = mmapLevel<VAL_TYPE>(("data/v" + std::to_string(l) + ".data").c_str(), l);
-            lsm.initializeLevel(l, keysPointer, valsPointer, numPairs);
+            bool* tombstonePointer = mmapLevel<bool>(("data/t" + std::to_string(l) + ".data").c_str(), l);
+            lsm.initializeLevel(l, keysPointer, valsPointer, tombstonePointer, numPairs);
             l++;
         }
         std::cout << "Loaded persisted data.\n" << std::endl;
@@ -77,6 +80,7 @@ void printStats(void) {
     // std::cout << "Bloom true positives: " << stats.bloomTruePositives << std::endl;
     // std::cout << "Bloom false positives: " << stats.bloomFalsePositives << std::endl;
     std::cout << "Bloom FPR: " << (float)stats.bloomFalsePositives / (float)(stats.bloomFalsePositives + (stats.searchLevelCalls - stats.bloomTruePositives)) << std::endl;
+    std::cout << "Deletes: " << stats.deletes << std::endl;
     std::cout << "\n —————————————————————————— \n" << std::endl;
 }
 
@@ -86,6 +90,7 @@ int main() {
     std::cout << "Buffer size: " << lsm.getBufferSize() << std::endl;
     std::cout << "Size ratio: " << SIZE_RATIO << std::endl;
     std::cout << "Bloom target FPR: " << BLOOM_TARGET_FPR << "\n" << std::endl;
+    std::cout << std::fixed << std::setprecision(0) << std::endl;
 
     populateCatalog();
 

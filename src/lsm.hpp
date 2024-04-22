@@ -14,6 +14,7 @@ template<typename KeyType, typename ValType>
 struct Level {
     KeyType* keys = nullptr;
     ValType* vals = nullptr;
+    bool* tombstone = nullptr;
     size_t numPairs = 0;
     KeyType* fence = nullptr;
     size_t fenceLength = 0;
@@ -49,6 +50,7 @@ class LSM {
         Level<KeyType, ValType>* getLevel(size_t l) { return this->levels[l]; }
         KeyType* getLevelKeys(size_t l) { return this->getLevel(l)->keys; }
         ValType* getLevelVals(size_t l) { return this->getLevel(l)->vals; }
+        bool* getLevelTombstone(size_t l) { return this->getLevel(l)->tombstone; }
         size_t getPairsInLevel(size_t l) { return this->getLevel(l)->numPairs; }
         size_t getLevelCapacity(size_t l) { return this->getBufferSize() * std::pow(this->getSizeRatio(), l); }
         bool levelIsEmpty(size_t l) { return this->getPairsInLevel(l) == 0; }
@@ -61,11 +63,12 @@ class LSM {
 
         // `initializeLevel()`
         // This function is used when we intend to create a new empty level at the bottom of the LSM tree.
-        void initializeLevel(size_t l, KeyType* keysPointer, ValType* valsPointer, size_t numPairs) {
+        void initializeLevel(size_t l, KeyType* keysPointer, ValType* valsPointer, bool* tombstonePointer, size_t numPairs) {
             assert(l == this->levels.size());
             Level<KeyType, ValType>* newLevel = new Level<KeyType, ValType>;
             newLevel->keys = keysPointer;
             newLevel->vals = valsPointer;
+            newLevel->tombstone = tombstonePointer;
             newLevel->numPairs = numPairs;
             this->levels.push_back(newLevel);
             this->numLevels++;
@@ -75,9 +78,10 @@ class LSM {
 
         // `appendPair()`
         // Appends a new KV pair at the end of the specified level.
-        void appendPair(size_t l, KeyType key, ValType val) {
+        void appendPair(size_t l, KeyType key, ValType val, bool isDelete) {
             this->getLevelKeys(l)[this->getPairsInLevel(l)] = key;
             this->getLevelVals(l)[this->getPairsInLevel(l)] = val;
+            this->getLevelTombstone(l)[this->getPairsInLevel(l)] = isDelete;
             this->getLevel(l)->numPairs++;
             this->getLevel(l)->bloomFilter->add(key);
             if (this->getPairsInLevel(l) == this->getLevelCapacity(l)) this->propagateLevel(l);
@@ -91,6 +95,7 @@ class LSM {
         void insertPair(size_t l, size_t pairIndex, KeyType key, ValType val) {
             this->getLevelKeys(l)[pairIndex] = key;
             this->getLevelVals(l)[pairIndex] = val;
+            this->getLevelTombstone(l)[pairIndex] = 0;
             return;
         }
 
@@ -104,6 +109,12 @@ class LSM {
         // Returns the value at the index specified in the level specified.
         ValType getVal(size_t l, size_t entryIndex) {
             return this->getLevelVals(l)[entryIndex];
+        }
+
+        // `getTomb()`
+        // Returns the tombstone bit at the index specified in the level specified. `1` means to delete.
+        bool getTomb(size_t l, size_t entryIndex) {
+            return this->getLevelTombstone(l)[entryIndex];
         }
         
         // `constructFence()`
@@ -156,15 +167,19 @@ class LSM {
 
             // This map effectively only keeps the most recent value for a given key. So if a key has been written more than once,
             // only the most recent value will be kept. The map is also ordered which lets us write directly back to the level.
-            std::map<KeyType, ValType> pairs;
+            // We also filter out all of the deletions during this process.
+            std::map<KeyType, std::pair<ValType, bool>> pairs;
             for (size_t i = 0; i < this->getPairsInLevel(l); i++) {
-                pairs[this->getKey(l, i)] = this->getVal(l, i);
+                pairs[this->getKey(l, i)] = std::make_pair(this->getVal(l, i), this->getTomb(l, i));
             }
 
             this->clearLevel(l);
 
-            for (const std::pair<KeyType, ValType>& pair : pairs) {
-                this->appendPair(l, pair.first, pair.second);
+            for (const std::pair<KeyType, std::pair<ValType, bool>>& pair : pairs) {
+                // Append the pairs in order, except in the case that it is a tombstone on the final level.
+                if (!(l == this->getNumLevels() - 1 && pair.second.second == true)) {
+                    this->appendPair(l, pair.first, pair.second.first, pair.second.second);
+                }
             }
 
             this->constructFence(l);
@@ -220,7 +235,8 @@ class LSM {
             // The buffer, l0, is not sorted by key. All layers beneath l0 are sorted by key.
 
             if (level == 0) {
-                for (size_t i = 0; i < this->getPairsInLevel(level); i++) {
+                // Iterate backwards through the buffer to get the most recent entry.
+                for (int i = this->getPairsInLevel(level) - 1; i >= 0; i--) {
                     if (this->getKey(level, i) == key) {
                         if (!range) stats.bloomTruePositives++;
                         return i;
@@ -271,7 +287,7 @@ class LSM {
         // Moves all of the data at level l to level l + 1, then wipes level l.
         void propagateData(size_t l) {
             for (size_t i = 0; i < this->getPairsInLevel(l); i++) {
-                this->appendPair(l + 1, this->getKey(l, i), this->getVal(l, i));
+                this->appendPair(l + 1, this->getKey(l, i), this->getVal(l, i), this->getTomb(l, i));
             }
             this->clearLevel(l);
             this->sortLevel(l + 1);
@@ -284,7 +300,8 @@ class LSM {
                 // We need to initialize a new level at the bottom of the tree then copy everything into it.
                 KeyType* keysPointer = mmapLevel<KeyType>(("data/k" + std::to_string(l + 1) + ".data").c_str(), l + 1);
                 ValType* valsPointer = mmapLevel<ValType>(("data/v" + std::to_string(l + 1) + ".data").c_str(), l + 1);
-                this->initializeLevel(l + 1, keysPointer, valsPointer, 0);
+                bool* tombstonePointer = mmapLevel<bool>(("data/t" + std::to_string(l + 1) + ".data").c_str(), l + 1);
+                this->initializeLevel(l + 1, keysPointer, valsPointer, tombstonePointer, 0);
             }
             this->propagateData(l);
         }
