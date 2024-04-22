@@ -17,7 +17,7 @@
 template<typename T>
 T* mmapLevel(const char* fileName, size_t l) {
     int fd = open(fileName, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-    size_t fileSize = PAGE_SIZE * BUFFER_PAGES * sizeof(T) * std::pow(SIZE_RATIO, l);
+    size_t fileSize = PAGE_SIZE * BUFFER_PAGES * std::pow(SIZE_RATIO, l) * sizeof(T);
     ftruncate(fd, fileSize);
     return reinterpret_cast<T*>(mmap(nullptr, fileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
 }

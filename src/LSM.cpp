@@ -72,8 +72,6 @@ std::tuple<Status, std::string> put(Status status, KEY_TYPE key, VAL_TYPE val) {
     }
 
     lsm.appendPair(0, key, val);
-    if (lsm.getPairsInLevel(0) == lsm.getBufferSize()) lsm.propagateLevel(0);
-
     return std::make_tuple(status, "");
 }
 
@@ -83,7 +81,7 @@ std::tuple<Status, std::string> get(Status status, KEY_TYPE key) {
 
     // Search through each level of the LSM tree.
     for (size_t l = 0; l < lsm.getNumLevels(); l++) {
-        KEY_TYPE i = lsm.searchLevel(l, key, false);
+        int i = lsm.searchLevel(l, key, false);
         if (i >= 0) {
             stats.successfulGets++;
             return std::make_tuple(status, std::to_string(lsm.getVal(l, i)));
@@ -111,9 +109,9 @@ std::tuple<Status, std::string> range(Status status, KEY_TYPE leftBound, KEY_TYP
                 }
             }
         } else {
-            size_t startIndex = lsm.searchLevel(l, leftBound, true);
-            size_t endIndex = lsm.searchLevel(l, rightBound, true);
-            for (size_t i = startIndex; i < endIndex; i++) {
+            int startIndex = lsm.searchLevel(l, leftBound, true);
+            int endIndex = lsm.searchLevel(l, rightBound, true);
+            for (int i = startIndex; i < endIndex; i++) {
                 results.push_back(lsm.getVal(l, i));
             }
         }
@@ -135,7 +133,7 @@ void printLevels(std::string userCommand) {
         else std::cout << "\n ——————— Level " << l << " ——————— " << std::endl;
 
         std::cout << "Contains: " << lsm.getPairsInLevel(l) << " KV pairs = " << lsm.getPairsInLevel(l) * (sizeof(KEY_TYPE) + sizeof(VAL_TYPE)) << " bytes." << std::endl;
-        std::cout << "Capacity: " << lsm.getBufferSize() * std::pow(lsm.getSizeRatio(), l) << " KV pairs = " << lsm.getBufferSize() * (sizeof(KEY_TYPE) + sizeof(VAL_TYPE)) * std::pow(lsm.getSizeRatio(), l) << " bytes." << std::endl;
+        std::cout << "Capacity: " << lsm.getLevelCapacity(l) << " KV pairs = " << lsm.getLevelCapacity(l) * (sizeof(KEY_TYPE) + sizeof(VAL_TYPE)) << " bytes." << std::endl;
 
         if (userCommand == "pv") {
             // Verbose printing.

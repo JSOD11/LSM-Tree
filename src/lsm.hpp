@@ -40,6 +40,7 @@ class LSM {
         LSM() {
             assert(this->pageSize > 0);
             assert(this->getBufferSize() > 0);
+            assert(this->getSizeRatio() > 0);
         }
         size_t getBufferSize() { return this->bufferSize; }
         size_t getNumLevels() { return this->numLevels; }
@@ -48,6 +49,7 @@ class LSM {
         KeyType* getLevelKeys(size_t l) { return this->getLevel(l)->keys; }
         ValType* getLevelVals(size_t l) { return this->getLevel(l)->vals; }
         size_t getPairsInLevel(size_t l) { return this->getLevel(l)->numPairs; }
+        size_t getLevelCapacity(size_t l) { return this->getBufferSize() * std::pow(this->getSizeRatio(), l); }
         bool levelIsEmpty(size_t l) { return this->getPairsInLevel(l) == 0; }
         KeyType getFenceKey(size_t l, size_t index) {
             assert(this->getLevel(l)->fence != nullptr);
@@ -77,6 +79,7 @@ class LSM {
             this->getLevelVals(l)[this->getPairsInLevel(l)] = val;
             this->getLevel(l)->numPairs++;
             this->getLevel(l)->bloomFilter->add(key);
+            if (this->getPairsInLevel(l) == this->getLevelCapacity(l)) this->propagateLevel(l);
             return;
         }
 
@@ -122,7 +125,7 @@ class LSM {
         // Constructs a bloom filter boolean vector over the keys for the specified level based on the current state of the level. 
         // Called at the end of `propagateLevel()` and in `populateCatalog()`.
         void constructBloomFilter(size_t l) {
-            size_t levelSize = this->bufferSize * std::pow(this->sizeRatio, l);
+            size_t levelSize = this->getLevelCapacity(l);
             size_t numBits = static_cast<size_t>(-(levelSize * std::log(BLOOM_TARGET_FPR)) / std::pow(std::log(2), 2));
             
             // Calculate the optimal number of hash functions.
@@ -170,14 +173,14 @@ class LSM {
         // `searchFence()`
         // Searches through the fence pointers at level l for the specified key.
         // Returns the page on which the key will be found if it exists.
-        KeyType searchFence(size_t level, KeyType key) {
+        int searchFence(size_t level, KeyType key) {
             // Binary search through the fence pointers to get the target page.
-            KeyType l = 0, r = this->getFenceLength(level) - 1;
+            int l = 0, r = this->getFenceLength(level) - 1;
             while (l <= r) {
                 // The target page is the final page.
-                if (l == (KeyType)this->getFenceLength(level)- 1) break;
+                if (l == (int)this->getFenceLength(level)- 1) break;
 
-                KeyType m = (l + r) / 2;
+                int m = (l + r) / 2;
                 if (this->getFenceKey(level, m) <= key && key < this->getFenceKey(level, m + 1)) {
                     return m;
                 } else if (this->getFenceKey(level, m) < key) {
@@ -202,13 +205,13 @@ class LSM {
         // smallest value larger than `key`. For a leftBound, this means we will get only
         // values larger than the leftBound, which is correct. This is correct for rightBounds
         // because the rightBound in these range queries is an exclusive bound.
-        KeyType searchLevel(size_t level, KeyType key, bool range) {
+        int searchLevel(size_t level, KeyType key, bool range) {
 
             if (!range) stats.searchLevelCalls++;
             if (!range) {
                 if (this->levelIsEmpty(level) || !searchBloomFilter(level, key)) return -1;
             } else {
-                // Bound is outside the range of keys in the level. Return 0 or len(level) - 1.
+                // Level is empty or bound is outside the range of keys in the level. Return 0 or len(level) - 1.
                 if (this->levelIsEmpty(level) || key < this->getKey(level, 0)) return 0;
                 if (key > this->getKey(level, this->getPairsInLevel(level) - 1)) return this->getPairsInLevel(level);
             }
@@ -222,10 +225,6 @@ class LSM {
                         return i;
                     }
                 }
-            } else if (this->levelIsEmpty(level)) {
-                // If the level is empty and we're doing a range query, we just return 0 for both
-                // the leftBound index and rightBound index.
-                if (range) return 0;
             } else {
                 KeyType pageIndex = searchFence(level, key);
                 if (pageIndex != -1) {
@@ -274,7 +273,7 @@ class LSM {
                 this->appendPair(l + 1, this->getKey(l, i), this->getVal(l, i));
             }
             this->clearLevel(l);
-            sortLevel(l + 1);
+            this->sortLevel(l + 1);
         }
 
         // `propogateLevel()`
@@ -285,13 +284,8 @@ class LSM {
                 KeyType* keysPointer = mmapLevel<KeyType>(("data/k" + std::to_string(l + 1) + ".data").c_str(), l + 1);
                 ValType* valsPointer = mmapLevel<ValType>(("data/v" + std::to_string(l + 1) + ".data").c_str(), l + 1);
                 this->initializeLevel(l + 1, keysPointer, valsPointer, 0);
-                this->propagateData(l);
-            } else {
-                // Level l + 1 already exists, so we can just write to it.
-                this->propagateData(l);
-                if (this->getPairsInLevel(l + 1) == this->getBufferSize() * std::pow(this->getSizeRatio(), l + 1)) propagateLevel(l + 1);
             }
-            this->clearLevel(l);
+            this->propagateData(l);
         }
 };
 

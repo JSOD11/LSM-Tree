@@ -1,5 +1,5 @@
-#ifndef LSM_H
-#define LSM_H
+#ifndef TYPES_H
+#define TYPES_H
 
 #include <cstddef>
 #include <string>
@@ -21,7 +21,7 @@ const float BLOOM_TARGET_FPR = 0.01;
 // Uncomment the below to create small trees for debugging.
 // const size_t PAGE_SIZE = 3;
 // const size_t BUFFER_PAGES = 1;
-// const size_t SIZE_RATIO = 3;
+// const size_t SIZE_RATIO = 2;
 // const float BLOOM_TARGET_FPR = 0.01;
 
 enum Status {
