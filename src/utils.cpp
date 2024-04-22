@@ -20,14 +20,16 @@ bool isNum(const std::string& str) {
     return iss.eof() && !iss.fail(); 
 }
 
-std::string vectorToString(const std::vector<VAL_TYPE>& vec) {
+std::string mapToString(const std::map<KEY_TYPE, VAL_TYPE>& map) {
     std::stringstream ss;
     ss << "[";
-    if (!vec.empty()) {
-        for (size_t i = 0; i < vec.size() - 1; ++i) {
-            ss << vec[i] << ", ";
+    if (!map.empty()) {
+        for (auto it = map.begin(); it != map.end(); ++it) {
+            if (it != map.begin()) {
+                ss << ", ";
+            }
+            ss << it->first << ":" << it->second;
         }
-        ss << vec.back();
     }
     ss << "]";
     return ss.str();

@@ -62,15 +62,6 @@ std::tuple<Status, std::string> put(Status status, KEY_TYPE key, VAL_TYPE val) {
 
     stats.puts++;
 
-    // Search through each level of the LSM tree. If the key already exists, update it.
-    for (size_t l = 0; l < lsm.getNumLevels(); l++) {
-        KEY_TYPE i = lsm.searchLevel(l, key, false);
-        if (i >= 0) {
-            lsm.insertPair(l, i, key, val);
-            return std::make_tuple(status, "");
-        }
-    }
-
     lsm.appendPair(0, key, val);
     return std::make_tuple(status, "");
 }
@@ -98,28 +89,29 @@ std::tuple<Status, std::string> range(Status status, KEY_TYPE leftBound, KEY_TYP
 
     stats.ranges++;
 
-    std::vector<VAL_TYPE> results;
+    std::map<KEY_TYPE, VAL_TYPE> results;
 
-    // A range query must search through every level of the LSM tree.
-    for (size_t l = 0; l < lsm.getNumLevels(); l++) {
+    // A range query must search through every level of the LSM tree. We iterate in reverse so that
+    // only the most recent duplicate KV pair is retrieved in the case of duplicate entries.
+    for (int l = lsm.getNumLevels() - 1; l >= 0; l--) {
         if (l == 0) {
             for (size_t i = 0; i < lsm.getPairsInLevel(0); i++) {
                 if ((leftBound <= lsm.getKey(l, i)) && (lsm.getKey(l, i) < rightBound)) {
-                    results.push_back(lsm.getVal(l, i));
+                    results[lsm.getKey(l, i)] = lsm.getVal(l, i);
                 }
             }
         } else {
             int startIndex = lsm.searchLevel(l, leftBound, true);
             int endIndex = lsm.searchLevel(l, rightBound, true);
             for (int i = startIndex; i < endIndex; i++) {
-                results.push_back(lsm.getVal(l, i));
+                results[lsm.getKey(l, i)] = lsm.getVal(l, i);
             }
         }
     }
 
     std::cout << "Range query bounds: [" << leftBound << ", " << rightBound << "], Range query size: " << results.size() << std::endl;
     stats.rangeLengthSum += results.size();
-    return std::make_tuple(status, vectorToString(results));
+    return std::make_tuple(status, mapToString(results));
 }
 
 void printLevels(std::string userCommand) {

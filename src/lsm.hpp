@@ -4,6 +4,7 @@
 #include <string>
 #include <tuple>
 #include <cassert>
+#include <map>
 
 #include "Types.hpp"
 #include "Utils.hpp"
@@ -153,17 +154,17 @@ class LSM {
                 return;
             }
 
-            std::vector<std::pair<KeyType, ValType>> levelVector;
+            // This map effectively only keeps the most recent value for a given key. So if a key has been written more than once,
+            // only the most recent value will be kept. The map is also ordered which lets us write directly back to the level.
+            std::map<KeyType, ValType> pairs;
             for (size_t i = 0; i < this->getPairsInLevel(l); i++) {
-                levelVector.push_back({this->getKey(l, i), this->getVal(l, i)});
+                pairs[this->getKey(l, i)] = this->getVal(l, i);
             }
 
-            std::sort(levelVector.begin(), levelVector.end(), [](const std::pair<KeyType, ValType>& x, const std::pair<KeyType, ValType>& y) {
-                return x.first < y.first;
-            });
+            this->clearLevel(l);
 
-            for (size_t i = 0; i < this->getPairsInLevel(l); i++) {
-                this->insertPair(l, i, levelVector[i].first, levelVector[i].second);
+            for (const std::pair<KeyType, ValType>& pair : pairs) {
+                this->appendPair(l, pair.first, pair.second);
             }
 
             this->constructFence(l);

@@ -24,6 +24,6 @@ T* mmapLevel(const char* fileName, size_t l) {
 
 std::vector<std::string> parseCommand(std::string userCommand);
 bool isNum(const std::string& str);
-std::string vectorToString(const std::vector<VAL_TYPE>& vec);
+std::string mapToString(const std::map<KEY_TYPE, VAL_TYPE>& map);
 
 #endif
