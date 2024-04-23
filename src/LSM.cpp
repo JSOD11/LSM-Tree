@@ -128,6 +128,7 @@ void printLevels(std::string userCommand) {
         else std::cout << "\n ——————— Level " << l << " ——————— " << std::endl;
 
         std::cout << "Contains: " << lsm.getPairsInLevel(l) << " KV pairs = " << lsm.getPairsInLevel(l) * (sizeof(KEY_TYPE) + sizeof(VAL_TYPE)) << " bytes." << std::endl;
+        std::cout << "Unique keys: " << lsm.getUniqueKeyCount(l) << ". Unique values: " << lsm.getUniqueValCount(l) << std::endl;
         std::cout << "Capacity: " << lsm.getLevelCapacity(l) << " KV pairs = " << lsm.getLevelCapacity(l) * (sizeof(KEY_TYPE) + sizeof(VAL_TYPE)) << " bytes." << std::endl;
 
         if (userCommand == "pv") {

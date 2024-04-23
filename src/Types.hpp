@@ -12,11 +12,17 @@ using VAL_TYPE = int64_t;
 
 const int PORT = 6789;
 
+enum EncodingType {
+    OFF,
+    DICT,
+};
+
 // We set PAGE_SIZE to this since int64_t is the largest type supported.
 const size_t PAGE_SIZE = sysconf(_SC_PAGESIZE) / sizeof(int64_t);
 const size_t BUFFER_PAGES = 1;
 const size_t SIZE_RATIO = 10;
 const float BLOOM_TARGET_FPR = 0.01;
+const EncodingType ENCODING_TYPE = OFF;
 
 // Uncomment the below to create small trees for debugging.
 // const size_t PAGE_SIZE = 3;
@@ -25,8 +31,8 @@ const float BLOOM_TARGET_FPR = 0.01;
 // const float BLOOM_TARGET_FPR = 0.01;
 
 enum Status {
-    SUCCESS = 0,
-    ERROR = 1
+    SUCCESS,
+    ERROR,
 };
 
 struct Message {

@@ -19,6 +19,7 @@ struct Level {
     KeyType* fence = nullptr;
     size_t fenceLength = 0;
     BloomFilter* bloomFilter = nullptr;
+    EncodingType encodingType = ENCODING_TYPE;
 
     ~Level() {
         delete[] fence;
@@ -61,6 +62,23 @@ class LSM {
         size_t getFenceLength(size_t l) { return this->getLevel(l)->fenceLength; }
         BloomFilter* getBloomFilter(size_t l) { return this->getLevel(l)->bloomFilter; }
 
+
+        int64_t getUniqueKeyCount(size_t l) {
+            std::map<KeyType, bool> keys;
+            for (size_t i = 0; i < this->getPairsInLevel(l); i++) {
+                keys[this->getKey(l, i)] = true;
+            }
+            return keys.size();
+        }
+
+        int64_t getUniqueValCount(size_t l) {
+            std::map<KeyType, bool> vals;
+            for (size_t i = 0; i < this->getPairsInLevel(l); i++) {
+                vals[this->getVal(l, i)] = true;
+            }
+            return vals.size();
+        }
+
         // `initializeLevel()`
         // This function is used when we intend to create a new empty level at the bottom of the LSM tree.
         void initializeLevel(size_t l, KeyType* keysPointer, ValType* valsPointer, bool* tombstonePointer, size_t numPairs) {
@@ -85,17 +103,6 @@ class LSM {
             this->getLevel(l)->numPairs++;
             this->getLevel(l)->bloomFilter->add(key);
             if (this->getPairsInLevel(l) == this->getLevelCapacity(l)) this->propagateLevel(l);
-            return;
-        }
-
-        // `insertPair()`
-        // Inserts a KV pair at the specified index within a level. Be careful with this
-        // and only use it when redesigning an entire level, or only modifying values,
-        // as it does not update bloom filters.
-        void insertPair(size_t l, size_t pairIndex, KeyType key, ValType val) {
-            this->getLevelKeys(l)[pairIndex] = key;
-            this->getLevelVals(l)[pairIndex] = val;
-            this->getLevelTombstone(l)[pairIndex] = 0;
             return;
         }
 

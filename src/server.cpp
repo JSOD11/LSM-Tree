@@ -78,7 +78,7 @@ void printStats(void) {
     std::cout << "Sum length of all ranges: " << stats.rangeLengthSum << std::endl;
     // std::cout << "Calls to searchLevel(): " << stats.searchLevelCalls << std::endl;
     // std::cout << "Bloom true positives: " << stats.bloomTruePositives << std::endl;
-    // std::cout << "Bloom false positives: " << stats.bloomFalsePositives << std::endl;
+    std::cout << "Bloom false positives: " << stats.bloomFalsePositives << std::endl;
     std::cout << "Bloom FPR: " << (float)stats.bloomFalsePositives / (float)(stats.bloomFalsePositives + (stats.searchLevelCalls - stats.bloomTruePositives)) << std::endl;
     std::cout << "Deletes: " << stats.deletes << std::endl;
     std::cout << "\n —————————————————————————— \n" << std::endl;
