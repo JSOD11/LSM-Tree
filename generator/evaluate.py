@@ -79,7 +79,7 @@ def print_stats(time_elapsed):
 if __name__ == "__main__":
     # Options
     verbose = False
-    show_output = True
+    show_output = False
 
     # Initialize key-value store
     db = {}
@@ -110,13 +110,17 @@ if __name__ == "__main__":
                     log("FAILED_GET", verbose)
             # RANGE
             elif line[0] == "r":
+                start = time.time()
                 (range_start, range_end) = map(int, line.split(" ")[1:3])
                 valid_items = [(k, v) for k, v in db.items() if range_start <= k < range_end]
                 valid_items.sort()  # Sort by key
                 if show_output:
                     print(" ".join(f"{k}:{v}" for k, v in valid_items))
+                
                 rangeLengthSum += len(valid_items)
                 log("RANGE", verbose)
+                time_elapsed = time.time() - start
+                print("Time elapsed:", time_elapsed)
             # DELETE
             elif line[0] == "d":
                 key = int(line.split(" ")[1])

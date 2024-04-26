@@ -33,7 +33,7 @@ typedef int32_t VAL_t;
 // #define GEN_RANDOM_VAL_UNIFORM(r) gsl_rng_get(r);
 
 #define GEN_RANDOM_KEY_UNIFORM(r) gsl_rng_uniform(r) * 1000000;
-#define GEN_RANDOM_VAL_UNIFORM(r) gsl_rng_uniform(r) * 1000000;
+#define GEN_RANDOM_VAL_UNIFORM(r) ((int)(gsl_rng_uniform(r) * 1000000) % 500);
 
 // PRINT PATTERNS
 #define PUT_PATTERN "p %d %d\n"

@@ -15,6 +15,7 @@ const int PORT = 6789;
 enum EncodingType {
     OFF,
     DICT,
+    RLE
 };
 
 // We set PAGE_SIZE to this since int64_t is the largest type supported.

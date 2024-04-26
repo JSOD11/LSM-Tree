@@ -20,6 +20,8 @@ struct Level {
     size_t fenceLength = 0;
     BloomFilter* bloomFilter = nullptr;
     EncodingType encodingType = ENCODING_TYPE;
+    std::unordered_map<int64_t, VAL_TYPE> dict;
+    std::vector<int64_t> dictReverse;
 
     ~Level() {
         delete[] fence;
@@ -51,6 +53,7 @@ class LSM {
         Level<KeyType, ValType>* getLevel(size_t l) { return this->levels[l]; }
         KeyType* getLevelKeys(size_t l) { return this->getLevel(l)->keys; }
         ValType* getLevelVals(size_t l) { return this->getLevel(l)->vals; }
+        std::unordered_map<int64_t, VAL_TYPE>& getLevelDict(size_t l) { return this->getLevel(l)->dict; }
         bool* getLevelTombstone(size_t l) { return this->getLevel(l)->tombstone; }
         size_t getPairsInLevel(size_t l) { return this->getLevel(l)->numPairs; }
         size_t getLevelCapacity(size_t l) { return this->getBufferSize() * std::pow(this->getSizeRatio(), l); }
@@ -98,11 +101,27 @@ class LSM {
         // Appends a new KV pair at the end of the specified level.
         void appendPair(size_t l, KeyType key, ValType val, bool isDelete) {
             this->getLevelKeys(l)[this->getPairsInLevel(l)] = key;
+            // check encoding type
+            // get level 
+            printf("Encoding type: %d\n", this->getLevel(l)->encodingType);
+            Level<KeyType, ValType>* level = this->getLevel(l);
+            if(this->getLevel(l)->encodingType == DICT){
+                // check if value is in dict, if not add it
+               if(level->dict.find(val) == level->dict.end()){
+                   level->dict[val] = level->dict.size();
+                   level->dictReverse.push_back(val);
+               }
+               printf("Value: %d\n", level->dict[val]);
+                this->getLevelVals(l)[this->getPairsInLevel(l)] = level->dict[val];
+            } else {
             this->getLevelVals(l)[this->getPairsInLevel(l)] = val;
+            }
             this->getLevelTombstone(l)[this->getPairsInLevel(l)] = isDelete;
             this->getLevel(l)->numPairs++;
             this->getLevel(l)->bloomFilter->add(key);
-            if (this->getPairsInLevel(l) == this->getLevelCapacity(l)) this->propagateLevel(l);
+            if (this->getPairsInLevel(l) == this->getLevelCapacity(l)) 
+                this->propagateLevel(l);
+            
             return;
         }
 
@@ -115,7 +134,13 @@ class LSM {
         // `getVal()`
         // Returns the value at the index specified in the level specified.
         ValType getVal(size_t l, size_t entryIndex) {
-            return this->getLevelVals(l)[entryIndex];
+            // check encoding type 
+            // first get level
+            Level<KeyType, ValType>* level = this->getLevel(l);
+            if(level->encodingType == DICT){
+                return level->dictReverse[level->vals[entryIndex]];
+            }
+            return level->vals[entryIndex];
         }
 
         // `getTomb()`

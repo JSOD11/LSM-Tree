@@ -53,6 +53,9 @@
                     W O R K L O A D   G E N E R A T O R                  \n\
 -------------------------------------------------------------------------\n\
 "
+
+#define UNIQUE_VAL_COUNT 500
+KEY_t unique_vals[UNIQUE_VAL_COUNT];  // Array to hold unique keys
 /////////////////////////////////////////////////////////////////////////////
 
 
@@ -101,7 +104,6 @@ void usage(char * binary) {
     #ifdef LOGO_IN_USAGE
     fprintf(stderr, DASLAB_LOGO);
     #endif
-    fprintf(stderr, LOGO);
     fprintf(stderr, PRODUCT);
     fprintf(stderr, "Usage: %s\n\
         --puts [number of put operations]\n\

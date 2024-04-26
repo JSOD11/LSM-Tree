@@ -6,6 +6,7 @@
 #include "Types.hpp"
 #include "LSM.hpp"
 #include "Utils.hpp"
+#include <fstream>
 
 // std::map<KEY_TYPE, VAL_TYPE> map;
 LSM<KEY_TYPE, VAL_TYPE> lsm;
@@ -103,11 +104,27 @@ std::tuple<Status, std::string> range(Status status, KEY_TYPE leftBound, KEY_TYP
                 }
             }
         } else {
+            auto startSearch = std::chrono::high_resolution_clock::now();
             int startIndex = lsm.searchLevel(l, leftBound, true);
             int endIndex = lsm.searchLevel(l, rightBound, true);
+            auto endSearch = std::chrono::high_resolution_clock::now();
+            auto durationSearch = std::chrono::duration_cast<std::chrono::microseconds>(endSearch - startSearch);
+
+            auto startRange = std::chrono::high_resolution_clock::now();
             for (int i = startIndex; i < endIndex; i++) {
                 results[lsm.getKey(l, i)] = lsm.getVal(l, i);
                 if (lsm.getTomb(l, i)) results.erase(lsm.getKey(l, i));
+            }
+            auto endRange = std::chrono::high_resolution_clock::now();
+            auto durationRange = std::chrono::duration_cast<std::chrono::microseconds>(endRange - startRange);
+
+            std::ofstream logfile("logfile.txt", std::ios::app);
+            if (logfile.is_open()) {
+                logfile << "Search time: " << durationSearch.count() << " microseconds." << std::endl;
+                logfile << "Range time: " << durationRange.count() << " microseconds." << std::endl;
+                logfile.close();
+            } else {
+                std::cout << "Failed to open log file." << std::endl;
             }
         }
     }
@@ -180,7 +197,19 @@ std::tuple<Status, std::string> processCommand(std::string userCommand) {
         return get(status, std::stoi(tokens[1]));
     } else if (tokens[0] == "r" && tokens.size() == 3 && isNum(tokens[1]) && isNum(tokens[2])) {
         // std::cout << "Received range query command.\n" <<  std::endl;
-        return range(status, std::stoi(tokens[1]), std::stoi(tokens[2]));
+        // start timing the function
+        auto start = std::chrono::high_resolution_clock::now();
+        auto res = range(status, std::stoi(tokens[1]), std::stoi(tokens[2]));
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        std::ofstream logfile("logfile.txt", std::ios::app);
+        if (logfile.is_open()) {
+            logfile << "Range query took " << duration.count() << " microseconds." << std::endl;
+            logfile.close();
+        } else {
+            std::cout << "Failed to open log file." << std::endl;
+        }
+        return res;
     } else if (tokens[0] == "d" && tokens.size() == 2 && isNum(tokens[1])) {
         // std::cout << "Received delete command.\n" <<  std::endl;
         return put(status, std::stoi(tokens[1]), 0, true);
