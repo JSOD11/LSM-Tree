@@ -39,6 +39,24 @@ void populateCatalog(void) {
             VAL_TYPE* valsPointer = mmapLevel<VAL_TYPE>(("data/v" + std::to_string(l) + ".data").c_str(), l);
             bool* tombstonePointer = mmapLevel<bool>(("data/t" + std::to_string(l) + ".data").c_str(), l);
             lsm.initializeLevel(l, keysPointer, valsPointer, tombstonePointer, numPairs);
+
+            // We read the dict as well
+            std::ifstream dict ("data/dict" + std::to_string(l) + ".data");
+            KEY_TYPE key;
+            long long val;
+            while (dict >> key >> val) {
+                lsm.getLevel(l)->dict[key] = val;
+            }
+            dict.close();
+
+            // We now construct dictReverse
+            std::ifstream dictreverse ("data/dictreverse" + std::to_string(l) + ".data");
+            int64_t key2;
+            while (dictreverse >> key2) {
+                lsm.getLevel(l)->dictReverse.push_back(key2);
+            }
+            dictreverse.close();
+
             l++;
         }
         std::cout << "Loaded persisted data.\n" << std::endl;
@@ -65,6 +83,25 @@ void shutdownServer(std::string userCommand) {
     for (size_t l = 0; l < lsm.getNumLevels(); l++) {
         munmap(lsm.getLevel(l)->keys, lsm.getPairsInLevel(l) * sizeof(KEY_TYPE));
         munmap(lsm.getLevel(l)->vals, lsm.getPairsInLevel(l) * sizeof(VAL_TYPE));
+        // We have to persist the dicts
+        
+        // we iterate through the map and write the data to a file
+        std::cout << "Persisting dict for level " << l << std::endl;
+        std::ofstream dict ("data/dict" + std::to_string(l) + ".data", std::ios::out | std::ios::app);
+        for (auto const& x : lsm.getLevel(l)->dict) {
+            dict << x.first << " " << x.second << std::endl;
+        }
+        dict.close();
+
+        // same for dictreverse
+        std::cout << "Persisting dictreverse for level " << l << std::endl;
+        std::ofstream dictreverse ("data/dictreverse" + std::to_string(l) + ".data", std::ios::out | std::ios::app);
+        // dictReverse is an array
+        for (size_t i = 0; i < lsm.getLevel(l)->dictReverse.size(); i++) {
+            dictreverse << lsm.getLevel(l)->dictReverse[i] << std::endl;
+        }
+        dictreverse.close();
+
         delete lsm.getLevel(l);
     }
 }

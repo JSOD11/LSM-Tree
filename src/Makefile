@@ -1,5 +1,5 @@
 CC=g++ -std=c++17
-CFLAGS=-Wall -Wextra -g
+CFLAGS=-Wall -Wextra -g -O3
 
 # Targets
 all: server client
@@ -8,7 +8,7 @@ all: server client
 server: server.o utils.o LSM.o bloomfilter.o MurmurHash3.o
 	$(CC) $(CFLAGS) -o server server.o utils.o LSM.o bloomfilter.o MurmurHash3.o
 
-server.o: server.cpp Utils.hpp LSM.hpp bloomfilter.hpp 
+server.o: server.cpp Utils.hpp LSM.hpp bloomfilter.hpp
 	$(CC) $(CFLAGS) -c server.cpp
 
 utils.o: utils.cpp Utils.hpp
@@ -32,4 +32,6 @@ client.o: client.cpp Utils.hpp
 
 # Clean
 clean:
-	rm -rf *.o server client data
+	rm -rf *.o server client
+cleandata:
+	rm -rf data

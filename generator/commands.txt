@@ -1,6 +1,6 @@
 https://bitbucket.org/HarvardDASlab/cs265-sysproj/src/master/
 
 ./generator --puts 100 --gets 50 --ranges 0 --deletes 0 --gets-misses-ratio 0.5 --gets-skewness 0.2 > ../dsl/small.dsl
-./generator --puts 10000 --gets 10000 --ranges 0 --deletes 0 --gets-misses-ratio 0.2 --gets-skewness 0.2 > ../dsl/10k.dsl 
+./generator --puts 1000000 --gets 0 --ranges 0 --deletes 0 --gets-misses-ratio 0.2 --gets-skewness 0.2 > ../dsl/10k.dsl 
 
 python3 evaluate.py ../dsl/small.dsl
