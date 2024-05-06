@@ -5,3 +5,5 @@ src/client
 src/server
 src/*.o
 src/data/*
+*.data
+*.data.old
