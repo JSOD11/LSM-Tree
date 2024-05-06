@@ -1,7 +1,7 @@
 #include <vector>
 #include <functional>
 
-#include "BloomFilter.hpp"
+#include "bloomfilter.hpp"
 #include "Types.hpp"
 
 BloomFilter::BloomFilter(size_t numBits, size_t numHashFunctions)

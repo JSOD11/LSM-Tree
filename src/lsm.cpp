@@ -2,9 +2,10 @@
 #include <sstream>
 #include <iostream>
 #include <cassert>
+#include <chrono>
 
 #include "Types.hpp"
-#include "LSM.hpp"
+#include "lsm.hpp"
 #include "Utils.hpp"
 #include <fstream>
 
@@ -121,7 +122,7 @@ std::tuple<Status, std::string> range(Status status, KEY_TYPE leftBound, KEY_TYP
             std::ofstream logfile("logfile.txt", std::ios::app);
             if (logfile.is_open()) {
                 logfile << "Search time: " << durationSearch.count() << " microseconds." << std::endl;
-                logfile << "Range time: " << durationRange.count() << " microseconds." << std::endl;
+                std::cout << "Range time: " << durationRange.count() << " microseconds." << std::endl;
                 logfile.close();
             } else {
                 std::cout << "Failed to open log file." << std::endl;
@@ -204,7 +205,7 @@ std::tuple<Status, std::string> processCommand(std::string userCommand) {
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         std::ofstream logfile("logfile.txt", std::ios::app);
         if (logfile.is_open()) {
-            logfile << "Range query took " << duration.count() << " microseconds." << std::endl;
+            std::cout << "Range query took " << duration.count() << " microseconds." << std::endl;
             logfile.close();
         } else {
             std::cout << "Failed to open log file." << std::endl;

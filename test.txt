@@ -1,0 +1,8 @@
+4 different graphs
+
+
+different sizes, 100k, 500k, 1M, 10M, 30M
+do both with and without DICT
+Different sizes of DICT/ int32/16/8
+Page misses
+
