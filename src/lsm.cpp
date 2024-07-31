@@ -10,7 +10,7 @@
 #include <fstream>
 
 // std::map<KEY_TYPE, VAL_TYPE> map;
-LSM<KEY_TYPE, VAL_TYPE> lsm;
+LSM<KEY_TYPE, VAL_TYPE, DICT_VAL_TYPE> lsm;
 Stats stats;
 
 // Uncomment the functions below and comment out the LSM tree versions

@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <map>
 #include <chrono>
-template<typename KeyType, typename ValType>
+template<typename KeyType, typename ValType, typename DictValType>
 struct Level {
     KeyType* keys = nullptr;
     ValType* vals = nullptr;
@@ -22,8 +22,10 @@ struct Level {
     size_t fenceLength = 0;
     BloomFilter* bloomFilter = nullptr;
     EncodingType encodingType = ENCODING_TYPE;
-    std::map<int64_t, VAL_TYPE> dict;
-    std::vector<int64_t> dictReverse;
+
+    // Note here the mapping from ValType to DictValType. See `Types.hpp` for more explanation.
+    std::map<ValType, DictValType> dict;
+    std::vector<ValType> dictReverse;
 
     ~Level() {
         delete[] fence;
@@ -31,7 +33,7 @@ struct Level {
     }
 };
 
-template<typename KeyType, typename ValType>
+template<typename KeyType, typename ValType, typename DictValType>
 class LSM {
     private:
         // The page size is the number of entries in a page.
@@ -41,7 +43,7 @@ class LSM {
         size_t bufferSize = BUFFER_PAGES * this->pageSize;
         size_t numLevels = 0;
         size_t sizeRatio = SIZE_RATIO;
-        std::vector<Level<KeyType, ValType>*> levels = {};
+        std::vector<Level<KeyType, ValType, DictValType>*> levels = {};
     
     public:
         LSM() {
@@ -52,10 +54,10 @@ class LSM {
         size_t getBufferSize() { return this->bufferSize; }
         size_t getNumLevels() { return this->numLevels; }
         size_t getSizeRatio() { return this->sizeRatio; }
-        Level<KeyType, ValType>* getLevel(size_t l) { return this->levels[l]; }
+        Level<KeyType, ValType, DictValType>* getLevel(size_t l) { return this->levels[l]; }
         KeyType* getLevelKeys(size_t l) { return this->getLevel(l)->keys; }
         ValType* getLevelVals(size_t l) { return this->getLevel(l)->vals; }
-        std::map<int64_t, VAL_TYPE>& getLevelDict(size_t l) { return this->getLevel(l)->dict; }
+        std::map<ValType, DictValType>& getLevelDict(size_t l) { return this->getLevel(l)->dict; }
         bool* getLevelTombstone(size_t l) { return this->getLevel(l)->tombstone; }
         size_t getPairsInLevel(size_t l) { return this->getLevel(l)->numPairs; }
         size_t getLevelCapacity(size_t l) { return this->getBufferSize() * std::pow(this->getSizeRatio(), l); }
@@ -88,7 +90,7 @@ class LSM {
         // This function is used when we intend to create a new empty level at the bottom of the LSM tree.
         void initializeLevel(size_t l, KeyType* keysPointer, ValType* valsPointer, bool* tombstonePointer, size_t numPairs) {
             assert(l == this->levels.size());
-            Level<KeyType, ValType>* newLevel = new Level<KeyType, ValType>;
+            Level<KeyType, ValType, DictValType>* newLevel = new Level<KeyType, ValType, DictValType>;
             newLevel->keys = keysPointer;
             newLevel->vals = valsPointer;
             newLevel->tombstone = tombstonePointer;
@@ -100,24 +102,23 @@ class LSM {
         }
 
         // `appendPair()`
-        // Appends a new KV pair at the end of the specified level.
+        // Appends a new KV pair at the end of the specified level. If dictionary encoding is
+        // turned on, the key is stored as usual, and the value (of type `ValType`) and its dictionary encoded value
+        // (of type `DictValType`) are stored in the dictionary. The dictionary encoded value is stored in the
+        // values array.
         void appendPair(size_t l, KeyType key, ValType val, bool isDelete) {
             this->getLevelKeys(l)[this->getPairsInLevel(l)] = key;
-            // check encoding type
-            // get level 
-            // printf("Encoding type: %d\n", this->getLevel(l)->encodingType);
-            Level<KeyType, ValType>* level = this->getLevel(l);
-            if(this->getLevel(l)->encodingType == DICT){
-                // check if value is in dict, if not add it
-               if(level->dict.find(val) == level->dict.end()){
-                   level->dict[val] = level->dict.size();
-                   level->dictReverse.push_back(val);
-               }
-               // printf("Value: %d\n", level->dict[val]);
+            Level<KeyType, ValType, DictValType>* level = this->getLevel(l);
+            if (this->getLevel(l)->encodingType == DICT){
+                if (level->dict.find(val) == level->dict.end()){
+                    level->dict[val] = level->dict.size();
+                    level->dictReverse.push_back(val);
+                }
                 this->getLevelVals(l)[this->getPairsInLevel(l)] = level->dict[val];
             } else {
-            this->getLevelVals(l)[this->getPairsInLevel(l)] = val;
+                this->getLevelVals(l)[this->getPairsInLevel(l)] = val;
             }
+
             this->getLevelTombstone(l)[this->getPairsInLevel(l)] = isDelete;
             this->getLevel(l)->numPairs++;
             this->getLevel(l)->bloomFilter->add(key);
@@ -135,11 +136,10 @@ class LSM {
 
         // `getVal()`
         // Returns the value at the index specified in the level specified.
+        // Handles regular and DICT encoding types.
         ValType getVal(size_t l, size_t entryIndex) {
-            // check encoding type 
-            // first get level
-            Level<KeyType, ValType>* level = this->getLevel(l);
-            if(level->encodingType == DICT){
+            Level<KeyType, ValType, DictValType>* level = this->getLevel(l);
+            if (level->encodingType == DICT){
                 return level->dictReverse[level->vals[entryIndex]];
             }
             return level->vals[entryIndex];
@@ -152,7 +152,7 @@ class LSM {
         }
         
         // `constructFence()`
-        // Constructs the fence pointer array at level l within the catalog .
+        // Constructs the fence pointer array at level l within the catalog.
         void constructFence(size_t l) {
             if (l == 0) return;
             delete[] this->getLevel(l)->fence;
@@ -341,7 +341,7 @@ class LSM {
         }
 };
 
-extern LSM<KEY_TYPE, VAL_TYPE> lsm;
+extern LSM<KEY_TYPE, VAL_TYPE, DICT_VAL_TYPE> lsm;
 
 template<typename T>
 T* mmapLevel(const char* fileName, size_t l);

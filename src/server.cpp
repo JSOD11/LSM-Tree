@@ -40,22 +40,22 @@ void populateCatalog(void) {
             bool* tombstonePointer = mmapLevel<bool>(("data/t" + std::to_string(l) + ".data").c_str(), l);
             lsm.initializeLevel(l, keysPointer, valsPointer, tombstonePointer, numPairs);
 
-            // We read the dict as well
-            std::ifstream dict ("data/dict" + std::to_string(l) + ".data");
-            KEY_TYPE key;
-            long long val;
-            while (dict >> key >> val) {
-                lsm.getLevel(l)->dict[key] = val;
+            // Populate the dictionary from persisted dictionary files.
+            std::ifstream dictStream ("data/dict" + std::to_string(l) + ".data");
+            VAL_TYPE val;
+            DICT_VAL_TYPE encodedVal;
+            while (dictStream >> val >> encodedVal) {
+                lsm.getLevel(l)->dict[val] = encodedVal;
             }
-            dict.close();
+            dictStream.close();
 
-            // We now construct dictReverse
-            std::ifstream dictreverse ("data/dictreverse" + std::to_string(l) + ".data");
-            int64_t key2;
-            while (dictreverse >> key2) {
-                lsm.getLevel(l)->dictReverse.push_back(key2);
+            // Construct the dictReverse array.
+            std::ifstream dictReverseStream ("data/dictreverse" + std::to_string(l) + ".data");
+            VAL_TYPE valReverse;
+            while (dictReverseStream >> valReverse) {
+                lsm.getLevel(l)->dictReverse.push_back(valReverse);
             }
-            dictreverse.close();
+            dictReverseStream.close();
 
             l++;
         }
@@ -69,7 +69,7 @@ void populateCatalog(void) {
 void shutdownServer(std::string userCommand) {
     if (userCommand == "sw") {
         std::filesystem::remove_all("data");
-        // std::cout << "Wiped data folder." << std::endl;
+        std::cout << "Wiped data folder." << std::endl;
     } else {
         // Write the number of pairs per level into the catalog file.
         std::ofstream catalogFile("data/catalog.data", std::ios::out);
@@ -77,30 +77,31 @@ void shutdownServer(std::string userCommand) {
             catalogFile << lsm.getPairsInLevel(i) << std::endl;
         }
         catalogFile.close();
-        // std::cout << "Persisted data folder." << std::endl;
+
+        // Persist the dictionaries.
+        for (size_t l = 0; l < lsm.getNumLevels(); l++) {
+            std::cout << "Persisting dict for level " << l << std::endl;
+            std::ofstream dictStream ("data/dict" + std::to_string(l) + ".data", std::ios::out | std::ios::trunc);
+            for (const auto& x : lsm.getLevel(l)->dict) {
+                dictStream << x.first << " " << x.second << std::endl;
+            }
+            dictStream.close();
+
+            std::cout << "Persisting dictreverse for level " << l << std::endl;
+            std::ofstream dictReverseStream ("data/dictreverse" + std::to_string(l) + ".data", std::ios::out | std::ios::trunc);
+            for (size_t i = 0; i < lsm.getLevel(l)->dictReverse.size(); i++) {
+                dictReverseStream << lsm.getLevel(l)->dictReverse[i] << std::endl;
+            }
+            dictReverseStream.close();
+        }
+
+        std::cout << "Persisted data folder." << std::endl;
     }
 
     for (size_t l = 0; l < lsm.getNumLevels(); l++) {
         munmap(lsm.getLevel(l)->keys, lsm.getPairsInLevel(l) * sizeof(KEY_TYPE));
         munmap(lsm.getLevel(l)->vals, lsm.getPairsInLevel(l) * sizeof(VAL_TYPE));
-        // We have to persist the dicts
-        
-        // we iterate through the map and write the data to a file
-        std::cout << "Persisting dict for level " << l << std::endl;
-        std::ofstream dict ("data/dict" + std::to_string(l) + ".data", std::ios::out | std::ios::app);
-        for (auto const& x : lsm.getLevel(l)->dict) {
-            dict << x.first << " " << x.second << std::endl;
-        }
-        dict.close();
-
-        // same for dictreverse
-        std::cout << "Persisting dictreverse for level " << l << std::endl;
-        std::ofstream dictreverse ("data/dictreverse" + std::to_string(l) + ".data", std::ios::out | std::ios::app);
-        // dictReverse is an array
-        for (size_t i = 0; i < lsm.getLevel(l)->dictReverse.size(); i++) {
-            dictreverse << lsm.getLevel(l)->dictReverse[i] << std::endl;
-        }
-        dictreverse.close();
+        munmap(lsm.getLevel(l)->tombstone, lsm.getPairsInLevel(l) * sizeof(bool));
 
         delete lsm.getLevel(l);
     }
@@ -109,24 +110,23 @@ void shutdownServer(std::string userCommand) {
 void printStats(void) {
     // std::cout << "\n ——— Session statistics ——— \n" << std::endl;
     std::cout << "Puts: " << stats.puts << std::endl;
-    // std::cout << "Successful gets: " << stats.successfulGets << std::endl;
-    // std::cout << "Failed gets: " << stats.failedGets << std::endl;
+    std::cout << "Successful gets: " << stats.successfulGets << std::endl;
+    std::cout << "Failed gets: " << stats.failedGets << std::endl;
     std::cout << "Ranges: " << stats.ranges << std::endl;
-    // std::cout << "Sum length of all ranges: " << stats.rangeLengthSum << std::endl;
+    std::cout << "Sum length of all ranges: " << stats.rangeLengthSum << std::endl;
     // std::cout << "Calls to searchLevel(): " << stats.searchLevelCalls << std::endl;
     // std::cout << "Bloom true positives: " << stats.bloomTruePositives << std::endl;
     // std::cout << "Bloom false positives: " << stats.bloomFalsePositives << std::endl;
-    // std::cout << "Bloom FPR: " << (float)stats.bloomFalsePositives / (float)(stats.bloomFalsePositives + (stats.searchLevelCalls - stats.bloomTruePositives)) << std::endl;
-    // std::cout << "Deletes: " << stats.deletes << std::endl;
+    std::cout << "Bloom FPR: " << (float)stats.bloomFalsePositives / (float)(stats.bloomFalsePositives + (stats.searchLevelCalls - stats.bloomTruePositives)) << std::endl;
+    std::cout << "Deletes: " << stats.deletes << std::endl;
     // std::cout << "\n —————————————————————————— \n" << std::endl;
 }
 
 int main() {
-
     std::cout << "\nStarting up server...\n" << std::endl;
-    // std::cout << "Buffer size: " << lsm.getBufferSize() << std::endl;
-    // std::cout << "Size ratio: " << SIZE_RATIO << std::endl;
-    // std::cout << "Bloom target FPR: " << BLOOM_TARGET_FPR << "\n" << std::endl;
+    std::cout << "Buffer size: " << lsm.getBufferSize() << std::endl;
+    std::cout << "Size ratio: " << SIZE_RATIO << std::endl;
+    std::cout << "Bloom target FPR: " << BLOOM_TARGET_FPR << "\n" << std::endl;
     std::cout << std::fixed << std::setprecision(0) << std::endl;
 
     populateCatalog();
@@ -136,16 +136,17 @@ int main() {
     while (std::getline(std::cin, userCommand)) {
         // std::cout << "executing: " << userCommand << std::endl;
 
-        std::string errorMessage;
+        std::string replyMessage;
         Status status;
-        std::tie(status, errorMessage) = processCommand(userCommand);
-        if (status == Status::ERROR){
-            std::cout << errorMessage << std::endl;
-        }
+        std::tie(status, replyMessage) = processCommand(userCommand);
+        std::cout << replyMessage << std::endl;
+
+        if (userCommand == "s" || userCommand == "sw") break;
     }
     auto end = std::chrono::high_resolution_clock::now();
     auto runtime = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
     std::cout << "total runtime: " << runtime.count() << " ms" << std::endl;
+
     shutdownServer(userCommand);
     printStats();
     return 0;
