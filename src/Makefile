@@ -1,5 +1,5 @@
 CC=g++ -std=c++17
-CFLAGS=-Wall -Wextra -g -O3
+CFLAGS=-Wall -Wextra -g
 
 # Targets
 all: server 

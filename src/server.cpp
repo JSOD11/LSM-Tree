@@ -80,14 +80,14 @@ void shutdownServer(std::string userCommand) {
 
         // Persist the dictionaries.
         for (size_t l = 0; l < lsm.getNumLevels(); l++) {
-            std::cout << "Persisting dict for level " << l << std::endl;
+            // std::cout << "Persisting dict for level " << l << std::endl;
             std::ofstream dictStream ("data/dict" + std::to_string(l) + ".data", std::ios::out | std::ios::trunc);
             for (const auto& x : lsm.getLevel(l)->dict) {
                 dictStream << x.first << " " << x.second << std::endl;
             }
             dictStream.close();
 
-            std::cout << "Persisting dictreverse for level " << l << std::endl;
+            // std::cout << "Persisting dictreverse for level " << l << std::endl;
             std::ofstream dictReverseStream ("data/dictreverse" + std::to_string(l) + ".data", std::ios::out | std::ios::trunc);
             for (size_t i = 0; i < lsm.getLevel(l)->dictReverse.size(); i++) {
                 dictReverseStream << lsm.getLevel(l)->dictReverse[i] << std::endl;
@@ -109,11 +109,12 @@ void shutdownServer(std::string userCommand) {
 
 void printStats(void) {
     // std::cout << "\n ——— Session statistics ——— \n" << std::endl;
-    std::cout << "Puts: " << stats.puts << std::endl;
+    std::cout << "\nPuts: " << stats.puts << std::endl;
     std::cout << "Successful gets: " << stats.successfulGets << std::endl;
     std::cout << "Failed gets: " << stats.failedGets << std::endl;
     std::cout << "Ranges: " << stats.ranges << std::endl;
     std::cout << "Sum length of all ranges: " << stats.rangeLengthSum << std::endl;
+    std::cout << "Range Value Sum % 10^6: " << stats.rangeValueSum << std::endl;
     // std::cout << "Calls to searchLevel(): " << stats.searchLevelCalls << std::endl;
     // std::cout << "Bloom true positives: " << stats.bloomTruePositives << std::endl;
     // std::cout << "Bloom false positives: " << stats.bloomFalsePositives << std::endl;
@@ -124,6 +125,10 @@ void printStats(void) {
 
 int main() {
     std::cout << "\nStarting up server...\n" << std::endl;
+    if (ENCODING_TYPE == ENCODING_OFF) std::cout << "Encoding type: ENCODING_OFF" << std::endl;
+    else if (ENCODING_TYPE == ENCODING_DICT) std::cout << "Encoding type: ENCODING_DICT" << std::endl;
+    if (TESTING_SWITCH == TESTING_OFF) std::cout << "Testing: TESTING_OFF" << std::endl;
+    else if (TESTING_SWITCH == TESTING_ON) std::cout << "Encoding type: TESTING_ON" << std::endl;
     std::cout << "Buffer size: " << lsm.getBufferSize() << std::endl;
     std::cout << "Size ratio: " << SIZE_RATIO << std::endl;
     std::cout << "Bloom target FPR: " << BLOOM_TARGET_FPR << "\n" << std::endl;
@@ -131,23 +136,13 @@ int main() {
 
     populateCatalog();
 
-    std::ifstream file("../dsl/put-get-range/100k.dsl");
-    std::istream* input = &file;
-    if (!file) {
-        std::cerr << "Error opening file, falling back to std::cin" << std::endl;
-        input = &std::cin;
-    }
-
     std::string userCommand;
     auto start = std::chrono::high_resolution_clock::now();
-    while (std::getline(*input, userCommand)) {
-        // std::cout << "executing: " << userCommand << std::endl;
-
+    while (std::getline(std::cin, userCommand)) {
         std::string replyMessage;
         Status status;
         std::tie(status, replyMessage) = processCommand(userCommand);
         std::cout << replyMessage << std::endl;
-
         if (userCommand == "s" || userCommand == "sw") break;
     }
     auto end = std::chrono::high_resolution_clock::now();
@@ -155,6 +150,10 @@ int main() {
     std::cout << "total runtime: " << runtime.count() << " ms" << std::endl;
 
     shutdownServer(userCommand);
+    if (ENCODING_TYPE == ENCODING_OFF) std::cout << "Encoding type: ENCODING_OFF" << std::endl;
+    else if (ENCODING_TYPE == ENCODING_DICT) std::cout << "Encoding type: ENCODING_DICT" << std::endl;
+    if (TESTING_SWITCH == TESTING_OFF) std::cout << "Testing: TESTING_OFF" << std::endl;
+    else if (TESTING_SWITCH == TESTING_ON) std::cout << "Encoding type: TESTING_ON" << std::endl;
     printStats();
     return 0;
 }

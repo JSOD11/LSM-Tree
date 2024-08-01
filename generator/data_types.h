@@ -14,7 +14,6 @@
 #define DATA_TYPES_H
 
 // KEY
-#include <cstdint>
 typedef int32_t KEY_t;
 typedef int32_t VAL_t;
 
@@ -34,7 +33,9 @@ typedef int32_t VAL_t;
 // #define GEN_RANDOM_VAL_UNIFORM(r) gsl_rng_get(r);
 
 #define GEN_RANDOM_KEY_UNIFORM(r) gsl_rng_uniform(r) * 20000000;
-#define GEN_RANDOM_VAL_UNIFORM(r) ((int)(gsl_rng_uniform(r) * 1000000) %  128);
+
+// NOTE: At the moment, 256 is hardcoded because we're using DICT_VAL_TYPE = uint8_t.
+#define GEN_RANDOM_VAL_UNIFORM(r) ((int)(gsl_rng_uniform(r) * 1000000) % 256);
 
 // PRINT PATTERNS
 #define PUT_PATTERN "p %d %d\n"

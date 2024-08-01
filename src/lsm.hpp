@@ -5,6 +5,7 @@
 #include <tuple>
 #include <cassert>
 #include <map>
+#include <limits>
 
 #include "Types.hpp"
 #include "Utils.hpp"
@@ -12,6 +13,7 @@
 #include <unordered_map>
 #include <map>
 #include <chrono>
+
 template<typename KeyType, typename ValType, typename DictValType>
 struct Level {
     KeyType* keys = nullptr;
@@ -109,7 +111,19 @@ class LSM {
         void appendPair(size_t l, KeyType key, ValType val, bool isDelete) {
             this->getLevelKeys(l)[this->getPairsInLevel(l)] = key;
             Level<KeyType, ValType, DictValType>* level = this->getLevel(l);
-            if (this->getLevel(l)->encodingType == DICT){
+            if (this->getLevel(l)->encodingType == ENCODING_DICT){
+
+                // std::cout << "Dict size: " << level->dict.size() << std::endl;
+                // std::cout << "DICT_VAL_TYPE capacity: " << static_cast<int>(std::numeric_limits<DICT_VAL_TYPE>::max() + 1) << std::endl;
+                
+                assert(level->dict.size() <= static_cast<int>(std::numeric_limits<DICT_VAL_TYPE>::max() + 1));
+                
+                // If this assertion is failing, it's because there are too many unique values
+                // to store in the number of bits given by DICT_VAL_TYPE (AKA this workload is not supported).
+                // Comment out the two lines above the assertion to see where the issue is arising. A future project is to
+                // make it so that the tree automatically increases the number of bits used in
+                // the dictionary, but for now it is fixed in `Types.hpp`.
+
                 if (level->dict.find(val) == level->dict.end()){
                     level->dict[val] = level->dict.size();
                     level->dictReverse.push_back(val);
@@ -138,7 +152,7 @@ class LSM {
         // Handles regular and DICT encoding types.
         ValType getVal(size_t l, size_t entryIndex) {
             Level<KeyType, ValType, DictValType>* level = this->getLevel(l);
-            if (level->encodingType == DICT){
+            if (level->encodingType == ENCODING_DICT){
                 return level->dictReverse[level->vals[entryIndex]];
             }
             return level->vals[entryIndex];

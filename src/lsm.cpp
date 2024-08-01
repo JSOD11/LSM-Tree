@@ -9,54 +9,8 @@
 #include "Utils.hpp"
 #include <fstream>
 
-// std::map<KEY_TYPE, VAL_TYPE> map;
 LSM<KEY_TYPE, VAL_TYPE, DICT_VAL_TYPE> lsm;
 Stats stats;
-
-// Uncomment the functions below and comment out the LSM tree versions
-// to see how the system performs when the underlying implementation is a map.
-
-// `put()`
-// This version of put uses a map. Used for debugging and development.
-// std::tuple<Status, std::string> put(Status status, int key, int val) {
-//     stats.puts++;
-//     map[key] = val;
-//     return std::make_tuple(status, "");
-// }
-
-// `get()`
-// This version of get uses a map. Used for debugging and development.
-// std::tuple<Status, std::string> get(Status status, int key) {
-//     if (map.find(key) == map.end()) {
-//         // std::cout << key << " is not a member of the LSM tree." << std::endl;
-//         stats.failedGets++;
-//         return std::make_tuple(status, "");
-//     } else {
-//         int val = map[key];
-//         stats.successfulGets++;
-//         // std::cout << key << " maps to " << val << std::endl;
-//         return std::make_tuple(status, std::to_string(val));
-//     }
-// }
-
-// `range()`
-// This version of range uses a map.
-// std::tuple<Status, std::string> range(Status status, int leftBound, int rightBound) {
-
-//     stats.ranges++;
-
-//     std::vector<int> results;
-
-//     for (int i = leftBound; i < rightBound; i++) {
-//         if (map.find(i) != map.end()) {
-//             results.push_back(map[i]);
-//         }
-//     }
-
-//     std::cout << "Range query size: " << results.size() << std::endl;
-//     stats.rangeLengthSum += results.size();
-//     return std::make_tuple(status, vectorToString(results));
-// }
 
 // `put()`
 // Put a key and value into the LSM tree. If the key already exists, update the value.
@@ -78,6 +32,7 @@ std::tuple<Status, std::string> get(Status status, KEY_TYPE key) {
         if (i >= 0) {
             if (lsm.getTomb(l, i)) break;
             stats.successfulGets++;
+            // VAL_TYPE x = lsm.getVal(l, i);
             return std::make_tuple(status, std::to_string(lsm.getVal(l, i)));
         }
     }
@@ -132,6 +87,11 @@ std::tuple<Status, std::string> range(Status status, KEY_TYPE leftBound, KEY_TYP
 
     std::cout << "Range query bounds: [" << leftBound << ", " << rightBound << "], Range query size: " << results.size() << std::endl;
     stats.rangeLengthSum += results.size();
+    if (TESTING_SWITCH == TESTING_ON) {
+        for (const auto& pair : results) {
+            stats.rangeValueSum = (stats.rangeValueSum + pair.second) % static_cast<VAL_TYPE>(std::pow(10, 6));
+        }
+    }
     return std::make_tuple(status, mapToString(results));
 }
 
@@ -198,7 +158,6 @@ std::tuple<Status, std::string> processCommand(std::string userCommand) {
         return get(status, std::stoi(tokens[1]));
     } else if (tokens[0] == "r" && tokens.size() == 3 && isNum(tokens[1]) && isNum(tokens[2])) {
         // std::cout << "Received range query command.\n" <<  std::endl;
-        // start timing the function
         auto start = std::chrono::high_resolution_clock::now();
         auto res = range(status, std::stoi(tokens[1]), std::stoi(tokens[2]));
         auto end = std::chrono::high_resolution_clock::now();
