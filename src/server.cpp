@@ -64,7 +64,7 @@ void populateCatalog(void) {
 }
 
 // `shutdownServer()`
-// Shuts down the server upon receiving an `s` or `sw` command from the client, munmaps files, 
+// Shuts down the server upon receiving an `s` or `sw` command from the client, munmaps files,
 // and frees levels. `s` persists the data in the data folder and `sw` wipes the data folder.
 void shutdownServer(std::string userCommand) {
     if (userCommand == "sw") {
@@ -131,9 +131,16 @@ int main() {
 
     populateCatalog();
 
+    std::ifstream file("../dsl/put-get-range/100k.dsl");
+    std::istream* input = &file;
+    if (!file) {
+        std::cerr << "Error opening file, falling back to std::cin" << std::endl;
+        input = &std::cin;
+    }
+
     std::string userCommand;
     auto start = std::chrono::high_resolution_clock::now();
-    while (std::getline(std::cin, userCommand)) {
+    while (std::getline(*input, userCommand)) {
         // std::cout << "executing: " << userCommand << std::endl;
 
         std::string replyMessage;

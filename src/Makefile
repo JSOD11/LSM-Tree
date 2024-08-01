@@ -25,6 +25,6 @@ MurmurHash3.o: MurmurHash3.cpp MurmurHash3.hpp
 
 # Clean
 clean:
-	rm -rf *.o server client
+	rm -rf *.o server client data
 cleandata:
 	rm -rf data

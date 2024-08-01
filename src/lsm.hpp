@@ -38,20 +38,20 @@ class LSM {
     private:
         // The page size is the number of entries in a page.
         size_t pageSize = PAGE_SIZE;
-        // The buffer size is the number of entries in the buffer.
-        // TODO: Fix bug when page size != buffer size.
-        size_t bufferSize = BUFFER_PAGES * this->pageSize;
+        // bufferPages is the number of pages in the buffer.
+        size_t bufferPages = BUFFER_PAGES;
         size_t numLevels = 0;
         size_t sizeRatio = SIZE_RATIO;
         std::vector<Level<KeyType, ValType, DictValType>*> levels = {};
     
     public:
         LSM() {
-            assert(this->pageSize > 0);
+            assert(this->getPageSize() > 0);
             assert(this->getBufferSize() > 0);
             assert(this->getSizeRatio() > 0);
         }
-        size_t getBufferSize() { return this->bufferSize; }
+        size_t getPageSize() { return this->pageSize; }
+        size_t getBufferSize() { return this->bufferPages * this->getPageSize(); }
         size_t getNumLevels() { return this->numLevels; }
         size_t getSizeRatio() { return this->sizeRatio; }
         Level<KeyType, ValType, DictValType>* getLevel(size_t l) { return this->levels[l]; }
@@ -122,8 +122,7 @@ class LSM {
             this->getLevelTombstone(l)[this->getPairsInLevel(l)] = isDelete;
             this->getLevel(l)->numPairs++;
             this->getLevel(l)->bloomFilter->add(key);
-            if (this->getPairsInLevel(l) == this->getLevelCapacity(l)) 
-                this->propagateLevel(l);
+            if (this->getPairsInLevel(l) == this->getLevelCapacity(l)) this->propagateLevel(l);
             
             return;
         }
@@ -156,9 +155,9 @@ class LSM {
         void constructFence(size_t l) {
             if (l == 0) return;
             delete[] this->getLevel(l)->fence;
-            this->getLevel(l)->fenceLength = std::ceil(static_cast<double>(this->getLevel(l)->numPairs) / this->pageSize);
+            this->getLevel(l)->fenceLength = std::ceil(static_cast<double>(this->getLevel(l)->numPairs) / this->getPageSize());
             this->getLevel(l)->fence = new KeyType[this->getLevel(l)->fenceLength];
-            for (size_t i = 0, j = 0; i < this->getLevel(l)->fenceLength; i++, j += this->pageSize) {
+            for (size_t i = 0, j = 0; i < this->getLevel(l)->fenceLength; i++, j += this->getPageSize()) {
                 if (j >= this->getLevel(l)->numPairs) {
                     std::cout << "constructFence(): Out of bounds access error." << std::endl;
                     return;
@@ -280,8 +279,8 @@ class LSM {
                 KeyType pageIndex = searchFence(level, key);
                 if (pageIndex != -1) {
                     // Binary search within the page.
-                    KeyType l = pageIndex * this->getBufferSize();
-                    KeyType r = (pageIndex + 1) * this->getBufferSize();
+                    KeyType l = pageIndex * this->getPageSize();
+                    KeyType r = (pageIndex + 1) * this->getPageSize();
                     if ((KeyType)this->getPairsInLevel(level) - 1 < r) r = (KeyType)this->getPairsInLevel(level) - 1;
                     while (l <= r) {
                         KeyType m = (l + r) / 2;
