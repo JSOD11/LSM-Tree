@@ -70,6 +70,7 @@
         "stack": "cpp",
         "filesystem": "cpp",
         "charconv": "cpp",
-        "execution": "cpp"
+        "execution": "cpp",
+        "data_types.h": "c"
     }
 }

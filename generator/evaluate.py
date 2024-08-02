@@ -20,6 +20,7 @@ successful_gets = 0
 failed_gets = 0
 ranges = 0
 rangeLengthSum = 0
+rangeValueSum = 0 # This is modulo 10**6 since it could get very large.
 successful_deletes = 0
 failed_deletes = 0
 loads = 0
@@ -58,6 +59,7 @@ def print_stats(time_elapsed):
     global failed_gets
     global ranges
     global rangeLengthSum
+    global rangeValueSum
     global successful_deletes
     global failed_deletes
     global loads  
@@ -67,6 +69,7 @@ def print_stats(time_elapsed):
     print("FAILED_GETS", failed_gets)
     print("RANGES", ranges)
     print("RANGE LENGTH SUM", rangeLengthSum)
+    print("RANGE VALUE SUM", rangeValueSum)
     print("SUCCESSFUL_DELS", successful_deletes)
     print("FAILED_DELS", failed_deletes)
     print("LOADS", loads)
@@ -79,7 +82,7 @@ def print_stats(time_elapsed):
 if __name__ == "__main__":
     # Options
     verbose = False
-    show_output = True
+    show_output = False
 
     # Initialize key-value store
     db = {}
@@ -110,13 +113,21 @@ if __name__ == "__main__":
                     log("FAILED_GET", verbose)
             # RANGE
             elif line[0] == "r":
+                start = time.time()
                 (range_start, range_end) = map(int, line.split(" ")[1:3])
-                valid_items = [(k, v) for k, v in db.items() if range_start <= k < range_end]
+                valid_items = []
+                for k, v in db.items():
+                    if range_start <= k < range_end:
+                        valid_items.append((k, v))
+                        rangeValueSum = (rangeValueSum + v) % (10**6)
                 valid_items.sort()  # Sort by key
                 if show_output:
                     print(" ".join(f"{k}:{v}" for k, v in valid_items))
+                
                 rangeLengthSum += len(valid_items)
                 log("RANGE", verbose)
+                time_elapsed = time.time() - start
+                print("Time elapsed:", time_elapsed)
             # DELETE
             elif line[0] == "d":
                 key = int(line.split(" ")[1])

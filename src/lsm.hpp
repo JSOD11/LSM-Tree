@@ -5,15 +5,19 @@
 #include <tuple>
 #include <cassert>
 #include <map>
+#include <limits>
 
 #include "Types.hpp"
 #include "Utils.hpp"
-#include "BloomFilter.hpp"
+#include "bloomfilter.hpp"
+#include <unordered_map>
+#include <map>
+#include <chrono>
 
-template<typename KeyType, typename ValType>
+template<typename KeyType, typename ValType, typename DictValType>
 struct Level {
     KeyType* keys = nullptr;
-    ValType* vals = nullptr;
+    std::variant<ValType*, DictValType*> vals;
     bool* tombstone = nullptr;
     size_t numPairs = 0;
     KeyType* fence = nullptr;
@@ -21,36 +25,40 @@ struct Level {
     BloomFilter* bloomFilter = nullptr;
     EncodingType encodingType = ENCODING_TYPE;
 
+    // Note here the mapping from ValType to DictValType. See `Types.hpp` for more explanation.
+    std::map<ValType, DictValType> dict;
+    std::vector<ValType> dictReverse;
+
     ~Level() {
         delete[] fence;
         delete bloomFilter;
     }
 };
 
-template<typename KeyType, typename ValType>
+template<typename KeyType, typename ValType, typename DictValType>
 class LSM {
     private:
         // The page size is the number of entries in a page.
         size_t pageSize = PAGE_SIZE;
-        // The buffer size is the number of entries in the buffer.
-        // TODO: Fix bug when page size != buffer size.
-        size_t bufferSize = BUFFER_PAGES * this->pageSize;
+        // bufferPages is the number of pages in the buffer.
+        size_t bufferPages = BUFFER_PAGES;
         size_t numLevels = 0;
         size_t sizeRatio = SIZE_RATIO;
-        std::vector<Level<KeyType, ValType>*> levels = {};
+        std::vector<Level<KeyType, ValType, DictValType>*> levels = {};
     
     public:
         LSM() {
-            assert(this->pageSize > 0);
+            assert(this->getPageSize() > 0);
             assert(this->getBufferSize() > 0);
             assert(this->getSizeRatio() > 0);
         }
-        size_t getBufferSize() { return this->bufferSize; }
+        size_t getPageSize() { return this->pageSize; }
+        size_t getBufferSize() { return this->bufferPages * this->getPageSize(); }
         size_t getNumLevels() { return this->numLevels; }
         size_t getSizeRatio() { return this->sizeRatio; }
-        Level<KeyType, ValType>* getLevel(size_t l) { return this->levels[l]; }
+        Level<KeyType, ValType, DictValType>* getLevel(size_t l) { return this->levels[l]; }
         KeyType* getLevelKeys(size_t l) { return this->getLevel(l)->keys; }
-        ValType* getLevelVals(size_t l) { return this->getLevel(l)->vals; }
+        std::map<ValType, DictValType>& getLevelDict(size_t l) { return this->getLevel(l)->dict; }
         bool* getLevelTombstone(size_t l) { return this->getLevel(l)->tombstone; }
         size_t getPairsInLevel(size_t l) { return this->getLevel(l)->numPairs; }
         size_t getLevelCapacity(size_t l) { return this->getBufferSize() * std::pow(this->getSizeRatio(), l); }
@@ -72,7 +80,7 @@ class LSM {
         }
 
         int64_t getUniqueValCount(size_t l) {
-            std::map<KeyType, bool> vals;
+            std::map<ValType, bool> vals;
             for (size_t i = 0; i < this->getPairsInLevel(l); i++) {
                 vals[this->getVal(l, i)] = true;
             }
@@ -81,11 +89,12 @@ class LSM {
 
         // `initializeLevel()`
         // This function is used when we intend to create a new empty level at the bottom of the LSM tree.
-        void initializeLevel(size_t l, KeyType* keysPointer, ValType* valsPointer, bool* tombstonePointer, size_t numPairs) {
+        void initializeLevel(size_t l, KeyType* keysPointer, void* valsPointer, bool* tombstonePointer, size_t numPairs) {
             assert(l == this->levels.size());
-            Level<KeyType, ValType>* newLevel = new Level<KeyType, ValType>;
+            Level<KeyType, ValType, DictValType>* newLevel = new Level<KeyType, ValType, DictValType>;
             newLevel->keys = keysPointer;
-            newLevel->vals = valsPointer;
+            if (ENCODING_TYPE == ENCODING_OFF) newLevel->vals = static_cast<ValType*>(valsPointer);
+            else if (ENCODING_TYPE == ENCODING_DICT) newLevel->vals = static_cast<DictValType*>(valsPointer);
             newLevel->tombstone = tombstonePointer;
             newLevel->numPairs = numPairs;
             this->levels.push_back(newLevel);
@@ -95,14 +104,42 @@ class LSM {
         }
 
         // `appendPair()`
-        // Appends a new KV pair at the end of the specified level.
+        // Appends a new KV pair at the end of the specified level. If dictionary encoding is
+        // turned on, the key is stored as usual, and the value (of type `ValType`) and its dictionary encoded value
+        // (of type `DictValType`) are stored in the dictionary. In the case of DICT encoding, the dictionary 
+        // encoded value is stored in the values array instead of the uncompressed value.
         void appendPair(size_t l, KeyType key, ValType val, bool isDelete) {
             this->getLevelKeys(l)[this->getPairsInLevel(l)] = key;
-            this->getLevelVals(l)[this->getPairsInLevel(l)] = val;
+            Level<KeyType, ValType, DictValType>* level = this->getLevel(l);
+            if (this->getLevel(l)->encodingType == ENCODING_DICT){
+
+                // std::cout << "Dict size: " << level->dict.size() << std::endl;
+                // std::cout << "DICT_VAL_TYPE capacity: " << static_cast<int>(std::numeric_limits<DICT_VAL_TYPE>::max() + 1) << std::endl;
+                
+                assert(level->dict.size() <= static_cast<int>(std::numeric_limits<DICT_VAL_TYPE>::max() + 1));
+                
+                // If this assertion is failing, it's because there are too many unique values
+                // to store in the number of bits given by DICT_VAL_TYPE (AKA this workload is not supported).
+                // Comment out the two lines above the assertion to see where the issue is arising. A future project is to
+                // make it so that the tree automatically increases the number of bits used in
+                // the dictionary, but for now it is fixed in `Types.hpp`.
+
+                if (level->dict.find(val) == level->dict.end()){
+                    level->dict[val] = level->dict.size();
+                    level->dictReverse.push_back(val);
+                }
+                DictValType* vals = static_cast<DictValType*>(this->getLevelVals(l));
+                vals[this->getPairsInLevel(l)] = level->dict[val];
+            } else {
+                ValType* vals = static_cast<ValType*>(this->getLevelVals(l));
+                vals[this->getPairsInLevel(l)] = val;
+            }
+
             this->getLevelTombstone(l)[this->getPairsInLevel(l)] = isDelete;
             this->getLevel(l)->numPairs++;
             this->getLevel(l)->bloomFilter->add(key);
             if (this->getPairsInLevel(l) == this->getLevelCapacity(l)) this->propagateLevel(l);
+            
             return;
         }
 
@@ -112,10 +149,28 @@ class LSM {
             return this->getLevelKeys(l)[entryIndex];
         }
 
+        // `getLevelVals()`
+        // Returns a void* either pointing to a vals array of type ValType* (in the case of no compression) or
+        // a vals array of type DictValType* (in the case that DICT compression is enabled).
+        void* getLevelVals(size_t l) {
+            if (this->getLevel(l)->encodingType == ENCODING_OFF) return std::get<ValType*>(this->getLevel(l)->vals);
+            else if (this->getLevel(l)->encodingType == ENCODING_DICT) return std::get<DictValType*>(this->getLevel(l)->vals);
+            assert(false); // If this assert executed, the encoding type is not supported.
+            return nullptr;
+        }
+
         // `getVal()`
-        // Returns the value at the index specified in the level specified.
+        // Returns the uncompressed value at the index specified in the level specified.
+        // Compatible with DICT encoding.
         ValType getVal(size_t l, size_t entryIndex) {
-            return this->getLevelVals(l)[entryIndex];
+            if (this->getLevel(l)->encodingType == ENCODING_OFF) {
+                return std::get<ValType*>(this->getLevel(l)->vals)[entryIndex];
+            } else if (this->getLevel(l)->encodingType == ENCODING_DICT) {
+                DictValType dictIndex = std::get<DictValType*>(this->getLevel(l)->vals)[entryIndex];
+                return this->getLevel(l)->dictReverse[dictIndex];
+            }
+            assert(false); // If this assert executed, the encoding type is not supported.
+            return 0;
         }
 
         // `getTomb()`
@@ -125,13 +180,13 @@ class LSM {
         }
         
         // `constructFence()`
-        // Constructs the fence pointer array at level l within the catalog .
+        // Constructs the fence pointer array at level l within the catalog.
         void constructFence(size_t l) {
             if (l == 0) return;
             delete[] this->getLevel(l)->fence;
-            this->getLevel(l)->fenceLength = std::ceil(static_cast<double>(this->getLevel(l)->numPairs) / this->pageSize);
+            this->getLevel(l)->fenceLength = std::ceil(static_cast<double>(this->getLevel(l)->numPairs) / this->getPageSize());
             this->getLevel(l)->fence = new KeyType[this->getLevel(l)->fenceLength];
-            for (size_t i = 0, j = 0; i < this->getLevel(l)->fenceLength; i++, j += this->pageSize) {
+            for (size_t i = 0, j = 0; i < this->getLevel(l)->fenceLength; i++, j += this->getPageSize()) {
                 if (j >= this->getLevel(l)->numPairs) {
                     std::cout << "constructFence(): Out of bounds access error." << std::endl;
                     return;
@@ -253,8 +308,8 @@ class LSM {
                 KeyType pageIndex = searchFence(level, key);
                 if (pageIndex != -1) {
                     // Binary search within the page.
-                    KeyType l = pageIndex * this->getBufferSize();
-                    KeyType r = (pageIndex + 1) * this->getBufferSize();
+                    KeyType l = pageIndex * this->getPageSize();
+                    KeyType r = (pageIndex + 1) * this->getPageSize();
                     if ((KeyType)this->getPairsInLevel(level) - 1 < r) r = (KeyType)this->getPairsInLevel(level) - 1;
                     while (l <= r) {
                         KeyType m = (l + r) / 2;
@@ -288,6 +343,10 @@ class LSM {
             this->getLevel(l)->fence = nullptr;
             this->getLevel(l)->fenceLength = 0;
             this->getLevel(l)->bloomFilter->clear();
+
+            // Clear the dictionary.
+            this->getLevel(l)->dict.clear();
+            this->getLevel(l)->dictReverse.clear();
         }
 
         // `propagateData()`
@@ -306,7 +365,9 @@ class LSM {
             if (l == this->getNumLevels() - 1) {
                 // We need to initialize a new level at the bottom of the tree then copy everything into it.
                 KeyType* keysPointer = mmapLevel<KeyType>(("data/k" + std::to_string(l + 1) + ".data").c_str(), l + 1);
-                ValType* valsPointer = mmapLevel<ValType>(("data/v" + std::to_string(l + 1) + ".data").c_str(), l + 1);
+                void* valsPointer = nullptr;
+                if (ENCODING_TYPE == ENCODING_OFF) valsPointer = mmapLevel<ValType>(("data/v" + std::to_string(l + 1) + ".data").c_str(), l + 1);
+                else if (ENCODING_TYPE == ENCODING_DICT) valsPointer = mmapLevel<DictValType>(("data/v" + std::to_string(l + 1) + ".data").c_str(), l + 1);
                 bool* tombstonePointer = mmapLevel<bool>(("data/t" + std::to_string(l + 1) + ".data").c_str(), l + 1);
                 this->initializeLevel(l + 1, keysPointer, valsPointer, tombstonePointer, 0);
             }
@@ -314,7 +375,7 @@ class LSM {
         }
 };
 
-extern LSM<KEY_TYPE, VAL_TYPE> lsm;
+extern LSM<KEY_TYPE, VAL_TYPE, DICT_VAL_TYPE> lsm;
 
 template<typename T>
 T* mmapLevel(const char* fileName, size_t l);

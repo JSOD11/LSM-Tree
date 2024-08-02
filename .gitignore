@@ -5,3 +5,9 @@ src/client
 src/server
 src/*.o
 src/data/*
+*.data
+*.data.old
+src/perf.*
+src/logfile.txt
+stats.txt
+test.txt
