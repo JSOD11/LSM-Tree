@@ -40,14 +40,14 @@ const EncodingType ENCODING_TYPE = ENCODING_DICT;
 
 // We set PAGE_SIZE to this since int64_t is the largest type supported.
 const size_t PAGE_SIZE = sysconf(_SC_PAGESIZE) / sizeof(int64_t);
-const size_t BUFFER_PAGES = 10;
+const size_t BUFFER_PAGES = 4;
 const size_t SIZE_RATIO = 10;
 const float BLOOM_TARGET_FPR = 0.01;
 
 // Uncomment the below to create small trees for debugging.
 // const size_t PAGE_SIZE = 3;
 // const size_t BUFFER_PAGES = 1;
-// const size_t SIZE_RATIO = 2;
+// const size_t SIZE_RATIO = 3;
 // const float BLOOM_TARGET_FPR = 0.01;
 
 enum Status {
@@ -74,7 +74,6 @@ struct Stats {
     size_t deletes = 0;
 };
 
-extern std::map<KEY_TYPE, VAL_TYPE> map;
 extern Stats stats;
 
 #endif

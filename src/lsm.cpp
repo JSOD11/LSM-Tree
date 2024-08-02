@@ -32,7 +32,6 @@ std::tuple<Status, std::string> get(Status status, KEY_TYPE key) {
         if (i >= 0) {
             if (lsm.getTomb(l, i)) break;
             stats.successfulGets++;
-            // VAL_TYPE x = lsm.getVal(l, i);
             return std::make_tuple(status, std::to_string(lsm.getVal(l, i)));
         }
     }
