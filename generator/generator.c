@@ -477,6 +477,14 @@ int main(int argc, char **argv) {
         mkdir("../dsl", 0700); // Adjust permissions as needed
     }
 
+    if (stat("../dsl/dict", &st) == -1) {
+        mkdir("../dsl/dict", 0700); // Adjust permissions as needed
+    }
+
+    if (stat("../dsl/standard", &st) == -1) {
+        mkdir("../dsl/standard", 0700); // Adjust permissions as needed
+    }
+
     /////////////////////////////////////
     //          LOAD SETTINGS          //
     /////////////////////////////////////

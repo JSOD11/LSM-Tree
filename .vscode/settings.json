@@ -71,6 +71,9 @@
         "filesystem": "cpp",
         "charconv": "cpp",
         "execution": "cpp",
-        "data_types.h": "c"
+        "data_types.h": "c",
+        "forward_list": "cpp",
+        "print": "cpp",
+        "queue": "cpp"
     }
 }
