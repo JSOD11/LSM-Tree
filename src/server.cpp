@@ -6,10 +6,8 @@
 #include <unistd.h>
 #include <tuple>
 #include <chrono>
-#include <filesystem>
 #include <sys/mman.h>
 #include <fcntl.h>
-#include <fstream>
 #include <cmath>
 #include <iomanip>
 
@@ -17,119 +15,14 @@
 #include "Utils.hpp"
 #include "lsm.hpp"
 
-// `populateCatalog()`
-// Populates the catalog with persisted data or creates a data folder if one does not exist.
-void populateCatalog(void) {
-    // Create the data folder if it does not exist.
-    if (!std::filesystem::exists("data")) std::filesystem::create_directory("data");
-
-    if (!std::filesystem::exists("data/catalog.data")) {
-        // The database is being started from scratch. We start just with l0.
-        KEY_TYPE* keysPointer = mmapLevel<KEY_TYPE>("data/k0.data", 0);
-        void* valsPointer = nullptr;
-        if (ENCODING_TYPE == ENCODING_OFF) valsPointer = mmapLevel<VAL_TYPE>("data/v0.data", 0);
-        else if (ENCODING_TYPE == ENCODING_DICT) valsPointer = mmapLevel<DICT_VAL_TYPE>("data/v0.data", 0);
-        bool* tombstonePointer = mmapLevel<bool>("data/t0.data", 0);
-        lsm.initializeLevel(0, keysPointer, valsPointer, tombstonePointer, 0);
-        // std::cout << "Started new database from scratch.\n" << std::endl;
-    } else {
-        // We are populating the catalog with persisted data.
-        std::ifstream catalogFile("data/catalog.data");
-        size_t numPairs = 0, l = 0;
-        while (catalogFile >> numPairs) {
-            KEY_TYPE* keysPointer = mmapLevel<KEY_TYPE>(("data/k" + std::to_string(l) + ".data").c_str(), l);
-            void* valsPointer = nullptr;
-            if (ENCODING_TYPE == ENCODING_OFF) valsPointer = mmapLevel<VAL_TYPE>(("data/v" + std::to_string(l) + ".data").c_str(), l);
-            else if (ENCODING_TYPE == ENCODING_DICT) valsPointer = mmapLevel<DICT_VAL_TYPE>(("data/v" + std::to_string(l) + ".data").c_str(), l);
-            bool* tombstonePointer = mmapLevel<bool>(("data/t" + std::to_string(l) + ".data").c_str(), l);
-            lsm.initializeLevel(l, keysPointer, valsPointer, tombstonePointer, numPairs);
-
-            // Populate the dictionary from persisted dictionary files.
-            std::ifstream dictStream ("data/dict" + std::to_string(l) + ".data");
-            VAL_TYPE val;
-            DICT_VAL_TYPE encodedVal;
-            while (dictStream >> val >> encodedVal) {
-                lsm.getLevel(l)->dict[val] = encodedVal;
-            }
-            dictStream.close();
-
-            // Construct the dictReverse array.
-            std::ifstream dictReverseStream ("data/dictreverse" + std::to_string(l) + ".data");
-            VAL_TYPE valReverse;
-            while (dictReverseStream >> valReverse) {
-                lsm.getLevel(l)->dictReverse.push_back(valReverse);
-            }
-            dictReverseStream.close();
-
-            l++;
-        }
-        std::cout << "Loaded persisted data.\n" << std::endl;
-    }
-}
-
-// `shutdownServer()`
-// Shuts down the server upon receiving an `s` or `sw` command from the client, munmaps files,
-// and frees levels. `s` persists the data in the data folder and `sw` wipes the data folder.
-void shutdownServer(std::string userCommand) {
-    if (userCommand == "sw") {
-        std::filesystem::remove_all("data");
-        std::cout << "Wiped data folder." << std::endl;
-    } else {
-        // Write the number of pairs per level into the catalog file.
-        std::ofstream catalogFile("data/catalog.data", std::ios::out);
-        for (size_t l = 0; l < lsm.getNumLevels(); l++) {
-            catalogFile << lsm.getPairsInLevel(l) << std::endl;
-        }
-        catalogFile.close();
-
-        // Persist the dictionaries.
-        for (size_t l = 0; l < lsm.getNumLevels(); l++) {
-            // std::cout << "Persisting dict for level " << l << std::endl;
-            std::ofstream dictStream ("data/dict" + std::to_string(l) + ".data", std::ios::out | std::ios::trunc);
-            for (const auto& x : lsm.getLevel(l)->dict) {
-                dictStream << x.first << " " << x.second << std::endl;
-            }
-            dictStream.close();
-
-            // std::cout << "Persisting dictreverse for level " << l << std::endl;
-            std::ofstream dictReverseStream ("data/dictreverse" + std::to_string(l) + ".data", std::ios::out | std::ios::trunc);
-            for (size_t i = 0; i < lsm.getLevel(l)->dictReverse.size(); i++) {
-                dictReverseStream << lsm.getLevel(l)->dictReverse[i] << std::endl;
-            }
-            dictReverseStream.close();
-        }
-
-        std::cout << "Persisted data folder." << std::endl;
-    }
-
-    for (size_t l = 0; l < lsm.getNumLevels(); l++) {
-        munmap(lsm.getLevelKeys(l), lsm.getPairsInLevel(l) * sizeof(KEY_TYPE));
-        if (lsm.getLevel(l)->encodingType == ENCODING_OFF) munmap(lsm.getLevelVals(l), lsm.getPairsInLevel(l) * sizeof(VAL_TYPE));
-        else if (lsm.getLevel(l)->encodingType == ENCODING_DICT) munmap(lsm.getLevelVals(l), lsm.getPairsInLevel(l) * sizeof(DICT_VAL_TYPE));
-        munmap(lsm.getLevelTombstone(l), lsm.getPairsInLevel(l) * sizeof(bool));
-
-        delete lsm.getLevel(l);
-    }
-}
-
-void printStats(void) {
-    // std::cout << "\n ——— Session statistics ——— \n" << std::endl;
-    std::cout << "\nPuts: " << stats.puts << std::endl;
-    std::cout << "Successful gets: " << stats.successfulGets << std::endl;
-    std::cout << "Failed gets: " << stats.failedGets << std::endl;
-    std::cout << "Ranges: " << stats.ranges << std::endl;
-    std::cout << "Sum length of all ranges: " << stats.rangeLengthSum << std::endl;
-    std::cout << "Range Value Sum % 10^6: " << stats.rangeValueSum << std::endl;
-    // std::cout << "Calls to searchLevel(): " << stats.searchLevelCalls << std::endl;
-    // std::cout << "Bloom true positives: " << stats.bloomTruePositives << std::endl;
-    // std::cout << "Bloom false positives: " << stats.bloomFalsePositives << std::endl;
-    std::cout << "Bloom FPR: " << (float)stats.bloomFalsePositives / (float)(stats.bloomFalsePositives + (stats.searchLevelCalls - stats.bloomTruePositives)) << std::endl;
-    std::cout << "Deletes: " << stats.deletes << std::endl;
-    // std::cout << "\n —————————————————————————— \n" << std::endl;
-}
-
+// `main()`
+// Run `./server` to start up the LSM tree. See `Types.hpp` to change the encoding type, testing switch,
+// buffer pages, size ratio, and other knobs.
 int main() {
     std::cout << "\nStarting up server...\n" << std::endl;
+
+    LSM<KEY_TYPE, VAL_TYPE, DICT_VAL_TYPE> lsm;
+
     if (ENCODING_TYPE == ENCODING_OFF) std::cout << "Encoding type: ENCODING_OFF" << std::endl;
     else if (ENCODING_TYPE == ENCODING_DICT) std::cout << "Encoding type: ENCODING_DICT" << std::endl;
     if (TESTING_SWITCH == TESTING_OFF) std::cout << "Testing: TESTING_OFF" << std::endl;
@@ -139,14 +32,12 @@ int main() {
     std::cout << "Bloom target FPR: " << BLOOM_TARGET_FPR << "\n" << std::endl;
     std::cout << std::fixed << std::setprecision(0) << std::endl;
 
-    populateCatalog();
-
     std::string userCommand;
     auto start = std::chrono::high_resolution_clock::now();
     while (std::getline(std::cin, userCommand)) {
         std::string replyMessage;
         Status status;
-        std::tie(status, replyMessage) = processCommand(userCommand);
+        std::tie(status, replyMessage) = lsm.processCommand(userCommand);
         std::cout << replyMessage << std::endl;
         if (userCommand == "s" || userCommand == "sw") break;
     }
@@ -154,11 +45,11 @@ int main() {
     auto runtime = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
     std::cout << "total runtime: " << runtime.count() << " ms" << std::endl;
 
-    shutdownServer(userCommand);
     if (ENCODING_TYPE == ENCODING_OFF) std::cout << "Encoding type: ENCODING_OFF" << std::endl;
     else if (ENCODING_TYPE == ENCODING_DICT) std::cout << "Encoding type: ENCODING_DICT" << std::endl;
     if (TESTING_SWITCH == TESTING_OFF) std::cout << "Testing: TESTING_OFF" << std::endl;
     else if (TESTING_SWITCH == TESTING_ON) std::cout << "Encoding type: TESTING_ON" << std::endl;
-    printStats();
+    lsm.printStats();
+    lsm.shutdownServer(userCommand);
     return 0;
 }
