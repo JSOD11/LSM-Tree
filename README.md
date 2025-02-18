@@ -1,6 +1,6 @@
 # LSM-Tree
 
-A Log-Structured Merge Tree implementation. At the moment, the implementation of the tree is a leveled LSM tree, with an unsorted buffer. There are a number of projects to complete at the current moment, outlined in `Roadmap.md`.
+A Log-Structured Merge Tree implementation. The LSM tree is leveled with no option for tiering, and the buffer is unsorted. Bloom filters and fence pointers are implemented. There is an experimental dictionary-encoded setting which may decrease data movement under certain workloads.
 
 # Usage
 
@@ -22,12 +22,7 @@ To start the server, run
 ./server
 ```
 
-## Client
-In a separate terminal, run
-```
-./client
-```
-This will connect the client to the server. The following commands are currently supported in the client:
+The following commands are currently supported in the client:
 
 ```
 p x y — PUT
@@ -76,4 +71,4 @@ In the `generator` folder, there is a Python script called `evaluate.py` which c
 python3 evaluate.py ../dsl/10k.dsl
 ```
 
-Run the LSM tree on the same set of commands to verify that the two have the same output. The hashing solution will run much faster than the LSM Tree, but I believe this can be attributed to network delay. Within `LSM.cpp`, there are versions of `put()` and `get()` that use the C++ standard map as the internal key-value store instead of the LSM Tree. Uncommenting these functions and commenting out the LSM versions shows that the LSM Tree seems to perform comparably to the C++ standard map.
+Run the LSM tree on the same set of commands to verify that the two have the same output.
